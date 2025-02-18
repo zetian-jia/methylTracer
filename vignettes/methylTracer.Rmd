@@ -66,10 +66,10 @@ single-cell resolution.
 
 
 ```{r}
-# if (!requireNamespace("BiocManager", quietly = TRUE)) {
-#   install.packages("BiocManager")
-# }
-# BiocManager::install(methylTracer)
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+    install.packages("BiocManager")
+}
+BiocManager::install(methylTracer)
 ```
 
 ```{r}
@@ -327,12 +327,6 @@ For **TAPS** data:
   columns and rows.
 
 ```{r}
-## build_count_matrix(sam_info=sam_info,
-##                   input_dir=input_dir,
-##                   annotation_file=annotation_file,
-##                   output_file=output_file,
-##                   thresholds=3,
-##                   bedtools="PATH/bedtool")
 
 head(input_file_df[, 1:4])
 ```
