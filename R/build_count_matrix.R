@@ -124,17 +124,17 @@ build_count_matrix <- function(
         parallel = parallel
     )
 
-    # Process each sample file
+    ## Process each sample file
     message("Starting matrix and annotation building...")
     for (i in seq_along(samples)) {
         sam <- samples[i]
         sample_path <- file.path(path_dir, sam)
-        # Check if sample file exists
+        ## Check if sample file exists
         if (!file.exists(sample_path)) {
             message(sprintf("Sample file %s does not exist.", sam))
         }
         processed_sample <- file.path(path_dir, paste0("processed_", sam))
-        # message(paste0('Processing sample:', sam))
+        ## message(paste0('Processing sample:', sam))
         if (lib == "TAPS") {
             system(
                 paste0(
@@ -180,7 +180,7 @@ build_count_matrix <- function(
               ),
                 intern = TRUE, ignore.stderr = TRUE
             )
-            # message('WGBS processing completed')
+            ## message('WGBS processing completed')
         }
 
         for (k in seq_along(annotation_file)) {
@@ -226,7 +226,7 @@ build_count_matrix <- function(
                 system(paste0("sed -i 's/-2147483647/nan/g' ",
                               map_processed_sample))
 
-                # Build coverage matrix message('Building coverage matrix...')
+                ## Build coverage matrix message('Building matrix...')
                 build_coverage_matrix(
                   processed_sample = processed_sample, 
                   annotation_file_k_filter_sort_k_cut = 
@@ -237,7 +237,7 @@ build_count_matrix <- function(
                   bedtools = bedtools, genome_type = genome_type
               )
             } else if (genome_type == "mouse") {
-                # Similar process for mouse genome
+                ## Similar process for mouse genome
                 annotation_file_k <- annotation_file[k]
                 annotation_file_k_filter_sort_k <- file.path(
                   path_dir, paste0("filter_sorted_", 
@@ -281,7 +281,7 @@ build_count_matrix <- function(
                   intern = TRUE, ignore.stderr = TRUE
               )
 
-                # message('Cleaning mouse output data...')
+                ## message('Cleaning mouse output data...')
                 system(paste0("sed -i 's/-2147483647/nan/g' ", 
                               map_processed_sample))
 
@@ -304,7 +304,7 @@ build_count_matrix <- function(
 
     message("\n")
     message("Merging all samples for each annotation file...")
-    # Merge individual window files for each annotation file
+    ## Merge individual window files for each annotation file
     pb <- txtProgressBar(
         min = 0, max = length(annotation_file),
         style = 3

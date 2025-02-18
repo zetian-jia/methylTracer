@@ -4,7 +4,6 @@
 .httr-oauth
 .DS_Store
 .quarto
-*.Rmd
 src/*.o
 src/*.so
 methylTracer.Rproj

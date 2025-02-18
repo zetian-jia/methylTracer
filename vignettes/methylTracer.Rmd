@@ -1,0 +1,620 @@
+---
+title: "methylTracer"
+author:
+  - name: "Zetian Jia"
+    affiliation: "Brain Research Center, Zhongnan Hospital of Wuhan University"
+  - name: "Xiang Li"
+    affiliation: "Brain Research Center, Zhongnan Hospital of Wuhan University"
+output:
+  BiocStyle::html_document:
+    toc_float: yes
+    toc_depth: 2
+package: methylTracer
+abstract: |
+  methylTracer processes TAPS and WGBS methylation data in large datasets
+  using delayed array operations. Accurate results are obtained through Rcpp
+  calls for detecting DMRs in single-cell methylation data.
+vignette: |
+  %\VignetteIndexEntry{methylTracer}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  tidy.opts = list(width.cutoff = 80),
+  tidy = FALSE,
+  message = FALSE,
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# Introduction
+
+<img src="methylTracer.logo.png" width="200" align="right">
+
+*methylTracer* is an [R](http://en.wikipedia.org/wiki/R_%28programming_language%29) 
+package designed for whole-genome DNA methylation analysis, supporting both 
+bulk and single-cell data. It efficiently processes [TAPS](https://www.nature.com/
+articles/s41587-019-0041-2) and WGBS data, enabling high-throughput epigenetic 
+research.
+
+## Key Features
+
+- **Optimized Storage & Memory Management**: 
+  - *methylTracer* uses [HDF5Array](https://bioconductor.org/packages/release/bioc/
+html/HDF5Array.html) to interface with [anndata](https://anndata.readthedocs.io/
+en/stable/) objects. This improves memory usage and storage for large-scale datasets.
+
+- **Fast DMR Detection**: 
+  - The package leverages [Rcpp](https://cran.r-project.org/web/packages/Rcpp/index.
+html) for rapid and accurate identification of de novo differentially methylated 
+regions (DMRs).
+
+- **High-Throughput Compatibility**: 
+  - *methylTracer* efficiently handles large datasets, making it ideal for 
+  genome-wide methylation profiling.
+
+With its advanced computational pipeline, *methylTracer* is a scalable and 
+powerful tool for researchers studying DNA methylation at both bulk and 
+single-cell resolution.
+
+
+
+```{r}
+# if (!requireNamespace("BiocManager", quietly = TRUE)) {
+#   install.packages("BiocManager")
+# }
+# BiocManager::install(methylTracer)
+```
+
+```{r}
+library(methylTracer)
+```
+
+# Quickly Start
+
+## Build methylTracer Object
+
+Before using *methylTracer* for methylation analysis, you need to prepare 
+your data in an HDF5 file format. The following steps will guide you through 
+the process of building a *methylTracer* object.
+
+**Prepare HDF5 File**:
+   - First, ensure that your methylation data is formatted correctly, 
+     typically in a matrix with rows representing genomic loci and columns 
+     representing samples. The data should be stored in an HDF5 file for 
+     efficient processing.
+
+   - The HDF5 format is optimal for handling large-scale data, as it allows 
+     for efficient storage and retrieval. You can use tools like the 
+     `rhdf5` package to create or manipulate HDF5 files in R.
+
+```{r}
+output_dir <- tempdir()
+set.seed(2025)
+
+sam_info_df <- data.frame(
+  sample_name = paste0("sample_", 1:50, ".bed"),
+  group = rep(c("case", "ctrl"), each = 25)
+)
+sam_info <- file.path(output_dir, "sample_info.csv")
+
+start_positions <- sort(sample(1001:2000, 100, replace = FALSE))
+marker_names <- paste0("chr21_", start_positions, "_", start_positions + 1)
+
+generate_methylation <- function(high, low) {
+  round(c(
+    runif(30, high[1], high[2]),
+    runif(40, low[1], low[2]),
+    runif(30, high[1], high[2])
+  ))
+}
+
+input_file_df <- data.frame(
+  marker_name = marker_names,
+  cbind(
+    sapply(1:25, function(i) generate_methylation(c(600, 1000), c(500, 1000))),
+    sapply(1:25, function(i) generate_methylation(c(600, 1000), c(0, 400)))
+  )
+)
+colnames(input_file_df)[-1] <- paste0("sample_", 1:50, ".bed")
+input_file <- file.path(output_dir, "methylTracer_matrix.txt")
+
+annotation_file_df <- data.frame(
+  chr = "chr21",
+  start = start_positions,
+  end = start_positions + 1,
+  SYMBOL = paste0("gene_", 1:100),
+  marker_name = marker_names
+)
+annotation_file <- file.path(output_dir, "annotation.bed")
+output_file <- "methylTracer_obj_test.h5"
+
+unlink(file.path(output_dir, output_file), recursive = TRUE)
+write.csv(sam_info_df, sam_info, row.names = FALSE)
+write.table(input_file_df, input_file, sep = "\t", row.names = FALSE)
+write.table(annotation_file_df, annotation_file, sep = "\t", row.names = FALSE)
+
+build_h5(
+  sam_info = sam_info, input_file = input_file,
+  output_dir = output_dir, output_file = output_file,
+  annotation_file = annotation_file
+)
+```
+
+The first step is to create a *methylTracer* object from your data. This object 
+will be used to store and manipulate your methylation data.
+
+
+```{r}
+met_obj <- build_met_obj(file.path(output_dir, output_file),
+  sample_name = "sample_name", marker_name = "marker_name"
+)
+```
+
+
+## Call De-novo DMRs
+
+Once the `methylTracer` object has been created, the next step is to call 
+de-novo Differentially Methylated Regions (DMRs). These regions are areas of the 
+genome where significant methylation differences are detected between your samples. 
+Identifying these regions is crucial for understanding epigenetic changes in your 
+biological context.
+
+In this step, we'll use the `calldmrs_turbo` function, which will process 
+your methylation data and return the identified DMRs.
+
+
+```{r}
+pre_res <- pre_calldmrs(
+  met_obj = met_obj, group_colname = "group",
+  case_group = "case", control_group = "ctrl"
+)
+dmr_res <- calldmrs_turbo(
+  met_obj = met_obj, case_group = "case", ctrl_group = "ctrl"
+)
+
+dmr_res
+```
+
+## plot dmrs
+```{r}
+plot_dmrs(
+  met_obj = met_obj,
+  pre_calldmrs_res = pre_res,
+  dmrs_gr = dmr_res,
+  region = "chr21:1363-1764",
+  shift_up = 30,
+  shift_down = 30,
+  gene_col = "SYMBOL"
+)
+```
+
+# Step-by-Step Guide
+
+## File Preparation
+
+### metafile
+
+The metafile provides additional metadata about the samples or experimental 
+conditions. It is essential for linking methylation data with specific sample 
+information. The metafile should be a tab-delimited text file containing the 
+following columns:
+
+- **sample_name**: A unique identifier for each sample.
+- **Condition**: The experimental condition or group (e.g., control, treatment).
+- **Sample Type**: Information on whether the sample is from blood, tissue, etc.
+- **Batch Information**: If applicable, the batch or sequencing run for the sample.
+- **Additional Metadata**: Other relevant details, such as age, sex, or disease status.
+
+Ensure that each sample in the metafile corresponds to the methylation data 
+in the input files. This file helps in downstream analysis, such as associating 
+methylation data with clinical outcomes or experimental conditions.
+
+```{r}
+output_dir <- tempdir()
+set.seed(2025)
+
+sam_info_df <- data.frame(
+  sample_name = paste0("sample_", 1:50, ".bed"),
+  group = rep(c("case", "ctrl"), each = 25)
+)
+sam_info <- file.path(output_dir, "sample_info.csv")
+
+head(sam_info_df)
+```
+
+### annotation
+
+The annotation file provides essential information for identifying markers 
+and associating them with specific regions in the genome. It should be in BED 
+format, typically containing the following columns:
+
+- **Chromosome (chr)**
+- **Start position**
+- **End position**
+- **Gene symbol** or other relevant marker information (e.g., SYMBOL)
+- **Marker name** (unique identifier for each region)
+
+We recommend using the [ChIPseeker package](https://github.com/YuLab-SMU/ChIPseeker/tree/devel) 
+for annotation. ChIPseeker helps annotate genomic regions with enriched marks 
+or motifs, making it easier to associate methylation data with specific gene 
+regions.
+
+```{r}
+start_positions <- sort(sample(1001:2000, 100, replace = FALSE))
+marker_names <- paste0("chr21_", start_positions, "_", start_positions + 1)
+
+generate_methylation <- function(high, low) {
+  round(c(
+    runif(30, high[1], high[2]),
+    runif(40, low[1], low[2]),
+    runif(30, high[1], high[2])
+  ))
+}
+
+input_file_df <- data.frame(
+  marker_name = marker_names,
+  cbind(
+    sapply(1:25, function(i) generate_methylation(c(600, 1000), c(500, 1000))),
+    sapply(1:25, function(i) generate_methylation(c(600, 1000), c(0, 400)))
+  )
+)
+colnames(input_file_df)[-1] <- paste0("sample_", 1:50, ".bed")
+input_file <- file.path(output_dir, "methylTracer_matrix.txt")
+
+annotation_file_df <- data.frame(
+  chr = "chr21",
+  start = start_positions,
+  end = start_positions + 1,
+  SYMBOL = paste0("gene_", 1:100),
+  marker_name = marker_names
+)
+annotation_file <- file.path(output_dir, "annotation.bed")
+
+head(annotation_file_df)
+```
+
+
+
+
+### methylation signal
+
+For **WGBS** data:
+- The data should be in BED format with six columns:
+  1. Chromosome
+  2. Start position
+  3. End position
+  4. Methylation signal
+  5. Methylated reads
+  6. Unmethylated reads
+
+For **TAPS** data:
+- The data should also be in BED format with six columns:
+  1. Chromosome
+  2. Start position
+  3. End position
+  4. Methylation signal
+  5. Unmethylated reads
+  6. Methylated reads
+
+*Recommended Tools*
+
+- **MethylDackel**: Use [MethylDackel](https://github.com/dpryan79/MethylDackel/tree/master) 
+  for data processing.
+- **bedtools**: This tool is essential for working with BED files. Refer to the 
+  [bedtools documentation](https://bedtools.readthedocs.io/en/latest/) for further details.
+
+*Output File*
+
+- The final output file will have rows labeled with marker names from the 
+  annotation file.
+- Columns will represent the methylation matrix derived from the BED files.
+
+*Data Format Suggestion*
+
+- Convert methylation data into percentage format (thousandths). This reduces 
+  storage space while maintaining precision.
+  
+*Notes for Consistency*
+
+- Ensure the correct format for data consistency and clarity when labeling 
+  columns and rows.
+
+```{r}
+## build_count_matrix(sam_info=sam_info,
+##                   input_dir=input_dir,
+##                   annotation_file=annotation_file,
+##                   output_file=output_file,
+##                   thresholds=3,
+##                   bedtools="PATH/bedtool")
+
+head(input_file_df[, 1:4])
+```
+
+
+
+
+
+
+## Build HDF5
+
+In this step, you need to prepare the input file in HDF5 (.h5) format. 
+HDF5 is a versatile data format commonly used for storing large amounts 
+of data in a structured way. It is particularly useful for handling 
+large methylation datasets, as it allows efficient storage and retrieval 
+of large-scale data. The HDF5 file should contain the following key information:
+
+- **Sample Information**: Metadata related to the samples, such as sample IDs, 
+  experimental conditions, and other relevant details.
+- **Methylation Data**: The actual methylation signal data, which may include 
+  methylated and unmethylated read counts, methylation percentages, or 
+  methylation levels at different genomic regions.
+- **Annotation Data**: The genomic regions or features (e.g., gene names, 
+  CpG islands) associated with the methylation data.
+
+Make sure the HDF5 file is structured properly to ensure compatibility with 
+downstream analysis tools and ease of access to the data.
+```{r}
+ann_df <- file.path(output_dir, "annotation.bed")
+output_file <- "methylTracer_obj_test.h5"
+unlink(file.path(output_dir, output_file), recursive = TRUE)
+write.csv(sam_info_df, sam_info, row.names = FALSE)
+write.table(input_file_df, input_file, sep = "\t", row.names = FALSE)
+write.table(annotation_file_df, annotation_file, sep = "\t", row.names = FALSE)
+
+build_h5(
+  sam_info = sam_info,
+  input_file = input_file,
+  output_dir = output_dir,
+  output_file = output_file,
+  annotation_file = annotation_file
+)
+```
+
+## Build methylTracer Object
+
+In this step, you will build a **methylTracer** object, which is essential 
+for analyzing and visualizing methylation data. The **methylTracer** package 
+provides tools for processing and visualizing DNA methylation data in a 
+structured way. To create a **methylTracer** object, follow these steps:
+
+1. **Load Data**: Import your methylation data (e.g., from an HDF5 file or BED 
+   format) into R using the appropriate functions.
+2. **Prepare Data**: Ensure the data is properly formatted, including 
+   methylation percentages, sample information, and genomic annotations.
+3. **Build Object**: Use the `build_met_obj()` function to create the object. 
+   This function requires the following parameters:
+   - `output_dir`: Path to the directory containing your data.
+   - `output_file`: The specific output file containing methylation data.
+   - `sample_name`: The name of the sample.
+   - `marker_name`: The name of the marker to associate with the data.
+4. **Quality Control**: Perform any necessary quality control checks, such as 
+   removing low-quality regions or normalizing the data.
+
+Once the **methylTracer** object is built, you can use it to explore methylation 
+patterns, visualize methylation distributions, and perform statistical analyses.
+
+```{r}
+met_obj <- build_met_obj(
+  file.path(output_dir, output_file),
+  sample_name = "sample_name",
+  marker_name = "marker_name"
+)
+
+head(met_obs(met_obj))
+```
+
+
+```{r}
+head(met_var(met_obj))
+```
+
+
+## Quality Control
+
+In this step, you will perform quality control (QC) on the methylation data 
+using the **compute_qc_value()** function. This function calculates various 
+quality control metrics for the **methylTracer** object, such as the overall 
+methylation level, coverage, and the distribution of methylation across 
+genomic regions.
+
+
+
+This function does not return a value. Instead, it writes the computed QC
+metrics to the associated HDF5 file. The following datasets are created:
+
+- `obs/coverage_cells`: CpG site coverage per cell/sample.
+- `obs/mean_cell_methylation`: Average methylation per cell/sample..
+- `var/coverage_feature`: Cell coverage per CpG site.
+- `var/mean_feature_methylation`: Average methylation per CpG site.
+
+Use the following code to compute the QC metrics:
+```{r}
+compute_qc_value(met_obj = met_obj)
+```
+
+```{r}
+plot_hist(
+  met_obj = met_obj,
+  slot = "obs/mean_cell_methylation",
+  bins = 50,
+  vline = 0.1
+)
+```
+
+
+## Filtering
+
+In this step, you will filter the methylation data to retain only high-quality 
+observations. The **filter_obs_var()** function helps filter out regions 
+with low observation counts or high variability. The function takes the 
+following parameters:
+
+- `met_obj`: The methylTracer object created earlier.
+- `obs_cutoff`: The cutoff value for the minimum number of observations 
+  required for a region to be included.
+- `var_cutoff`: The cutoff value for the maximum allowed variability across 
+  observations.
+- `sample_name`: The sample name for the methylation data.
+- `marker_name`: The marker name associated with the data.
+
+Use the following code to filter the methylation data:
+
+```{r}
+filter_met_obj <- filter_obs_var(
+  met_obj = met_obj,
+  obs_cutoff = 0,
+  var_cutoff = 0,
+  sample_name = "sample_name",
+  marker_name = "marker_name"
+)
+```
+
+
+## Mean Imputation
+
+In this step, you will perform mean imputation to fill in missing methylation 
+values. The **impute_met_obj()** function imputes missing values by replacing 
+them with the mean methylation value for the corresponding marker. The function 
+takes the following parameters:
+
+- `met_obj`: The filtered methylTracer object from the previous step.
+- `sample_name`: The sample name associated with the methylation data.
+- `marker_name`: The marker name associated with the methylation data.
+
+Use the following code to perform the imputation:
+
+```{r}
+met_obj_impute <- impute_met_obj(
+  met_obj = filter_met_obj,
+  sample_name = "sample_name",
+  marker_name = "marker_name"
+)
+```
+
+
+```{r}
+plot_hist(
+  met_obj = met_obj_impute,
+  slot = "obs/mean_cell_methylation",
+  bins = 50,
+  vline = 0.1
+)
+```
+
+## Call DMRs
+
+In this step, you will call differentially methylated regions (DMRs) between 
+two groups (e.g., case and control) using the **calldmrs_turbo()** function. 
+The process involves first preparing the data with **pre_calldmrs()**, and 
+then calling DMRs with the specified parameters.
+
+1. **pre_calldmrs()**: This function prepares the data for DMR calling by 
+   grouping samples into case and control categories. The function requires 
+   the following parameters:
+   - `met_obj`: The methylTracer object containing methylation data.
+   - `group_colname`: The column name that indicates the group for each sample.
+   - `case_group`: The label for the case group (e.g., "case").
+   - `control_group`: The label for the control group (e.g., "ctrl").
+
+   Use the following code to prepare the data:
+
+```{r}
+pre_res <- pre_calldmrs(
+  met_obj = met_obj,
+  group_colname = "group",
+  case_group = "case",
+  control_group = "ctrl"
+)
+dmr_res <- calldmrs_turbo(
+  met_obj = met_obj,
+  p_threshold = 0.05,
+  case_group = "case",
+  ctrl_group = "ctrl"
+)
+```
+
+The output of **calldmrs_turbo()** is a standard **GRanges** object, which 
+contains the genomic coordinates of the differentially methylated regions 
+(DMRs) along with their associated methylation statistics. This format makes 
+it easy to store the results for further analysis or to visualize them.
+
+You can save the **GRanges** object for future use or convert it to other 
+formats (e.g., data frame, bed file) if necessary. Additionally, you can 
+visualize the DMRs using genome browsers or generate plots to better understand 
+the methylation differences between the case and control groups.
+
+For example, you can plot the distribution of DMRs across the genome or 
+visualize their coverage using various plotting functions that accept **GRanges** 
+objects as input.
+
+```{r}
+print(dmr_res)
+```
+
+```{r}
+plot_dmrs(
+  met_obj = met_obj,
+  pre_calldmrs_res = pre_res,
+  dmrs_gr = dmr_res,
+  region = "chr21:1363-1764",
+  shift_up = 30,
+  shift_down = 30,
+  gene_col = "SYMBOL"
+)
+```
+
+## Visualization
+
+The **plot_dens()** function generates a density plot to visualize the distribution 
+of methylation data. It helps in examining the variation in methylation levels 
+across different regions or samples. In this function, the following parameters are used:
+
+- `met_obj`: The methylTracer object containing methylation data.
+- `slot`: Specifies the data slot to use for plotting. In this case, 
+`"obs/coverage_cells"` 
+  indicates the coverage data at the cell level.
+- `vline`: Adds a vertical line at a specified methylation level (e.g., `vline = 3`), 
+  which can be used to highlight a threshold or a specific value in the plot.
+
+Use the following code to create the density plot:
+
+```{r}
+plot_dens(
+  met_obj = met_obj,
+  slot = "obs/mean_cell_methylation",
+  vline = 2.5
+)
+```
+
+```{r}
+plot_dens(
+  met_obj = met_obj,
+  slot = "obs/coverage_cells",
+  vline = 3
+)
+```
+
+
+
+
+```{r}
+plot_scatter(
+  met_obj = met_obj,
+  xcol = "coverage_cells",
+  ycol = "mean_cell_methylation",
+  group_col = "group"
+)
+```
+
+
+
+```{r}
+sessionInfo()
+```
