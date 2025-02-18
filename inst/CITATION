@@ -1,0 +1,11 @@
+bibentry(
+  bibtype  = "Article",
+  title    = "methylTracer: Efficient DNA Methylation Analysis for TAPS and WGBS Data",
+  author   = "Zetian Jia, Xiang Li",
+  journal  = "R package version 0.99.0",
+  year     = "2025",  # Assuming the current year as the release year
+  volume   = "",      # Leave blank if not applicable
+  number   = "",      # Leave blank if not applicable
+  pages    = "",      # Leave blank if not applicable
+  doi      = ""       # Leave blank unless you have a DOI for the package
+)

@@ -1,0 +1,53 @@
+Package: methylTracer
+Title: Efficient DNA Methylation Analysis for TAPS and WGBS Data
+Version: 0.99.0
+Authors@R: 
+   c(person(given = "Zetian", family = "Jia" , email = "jztneurosurgery@whu.edu.cn", 
+                role = c("aut", "cre"), comment = c(ORCID = "0000-0003-0624-5634")),
+     person(given = "Xiang", family = "Li" , email = "lixiang.epi@foxmail.com", role = c("ctb", "fnd")))
+Description: methylTracer is an R package designed for whole-genome DNA methylation analysis, 
+    specifically for TAPS and WGBS data. With Rcpp acceleration, it quickly and accurately 
+    identifies methylation patterns. The package based on DelayedArray storage for delayed computation, 
+    optimizing memory usage and performance with large datasets. Tailored for high-throughput research, 
+    methylTracer detects de-novo DMRs within seconds, making it a fast and reliable tool for single-cell 
+    methylation analysis in biological research.
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports: 
+    IRanges (>= 2.36.0),
+    GenomicRanges,
+    dplyr (>= 1.1.4),
+    data.table (>= 1.15.4),
+    ggplot2 (>= 3.5.1),
+    magrittr (>= 2.0.3),
+    methods,
+    tidyr,
+    utils,
+    BiocParallel,
+    presto (>= 1.0.0),
+    DelayedMatrixStats (>= 1.24.0),
+    DelayedArray (>= 0.28.0),
+    Rcpp (>= 1.0.12),
+    rhdf5 (>= 2.46.1),
+    BSgenome,
+    Biostrings,
+    stringi (>= 1.8.4),
+    rlang
+LazyData: false
+Depends: 
+    R (>= 4.3.0),
+    HDF5Array (>= 1.30.0)
+Suggests: 
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+biocViews: Epigenetics, DifferentialMethylation, WholeGenome, SingleCell, GeneRegulation, Classification, Coverage
+VignetteBuilder: knitr
+BiocType: Software
+URL: https://github.com/zetian-jia/methylTracer
+BugReports: https://github.com/zetian-jia/methylTracer/issues
+LinkingTo: 
+    Rcpp
+License: MIT + file LICENSE
