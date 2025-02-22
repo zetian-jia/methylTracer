@@ -41,6 +41,7 @@ Depends:
 Suggests: 
     knitr,
     rmarkdown,
+    BiocStyle,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 biocViews: Epigenetics, DifferentialMethylation, WholeGenome, SingleCell, GeneRegulation, Classification, Coverage

@@ -8,12 +8,8 @@ author:
 output:
   BiocStyle::html_document:
     toc_float: yes
-    toc_depth: 2
+    toc_depth: 3
 package: methylTracer
-abstract: |
-  methylTracer processes TAPS and WGBS methylation data in large datasets
-  using delayed array operations. Accurate results are obtained through Rcpp
-  calls for detecting DMRs in single-cell methylation data.
 vignette: |
   %\VignetteIndexEntry{methylTracer}
   %\VignetteEngine{knitr::rmarkdown}
@@ -38,41 +34,45 @@ knitr::opts_chunk$set(
 <img src="methylTracer.logo.png" width="200" align="right">
 
 *methylTracer* is an [R](http://en.wikipedia.org/wiki/R_%28programming_language%29) 
-package designed for whole-genome DNA methylation analysis, supporting both 
-bulk and single-cell data. It efficiently processes [TAPS](https://www.nature.com/
-articles/s41587-019-0041-2) and WGBS data, enabling high-throughput epigenetic 
-research.
+package designed to facilitate whole-genome DNA methylation analysis, supporting both 
+bulk and single-cell data. It efficiently processes high-throughput sequencing data 
+from techniques such as [TAPS](https://www.nature.com/articles/s41587-019-0041-2) and 
+WGBS (Whole Genome Bisulfite Sequencing), providing powerful tools for large-scale 
+epigenetic research.
+
+The field of DNA methylation analysis has grown exponentially with the advent of 
+high-throughput sequencing technologies, such as WGBS and TAPS, producing vast amounts 
+of data from both bulk tissues and individual cells. However, many existing tools for 
+methylation analysis are limited in their scalability, memory efficiency, and support 
+for single-cell datasets. *methylTracer* is designed to fill this gap by providing a 
+scalable, efficient, and comprehensive toolset for whole-genome DNA methylation analysis. 
+The integration with Bioconductor allows for seamless workflows, ensuring compatibility 
+with other widely used genomic analysis tools and enabling robust data management for 
+large datasets.
 
 ## Key Features
 
 - **Optimized Storage & Memory Management**: 
-  - *methylTracer* uses [HDF5Array](https://bioconductor.org/packages/release/bioc/
-html/HDF5Array.html) to interface with [anndata](https://anndata.readthedocs.io/
-en/stable/) objects. This improves memory usage and storage for large-scale datasets.
+  - *methylTracer* utilizes the [HDF5Array](https://bioconductor.org/packages/release/bioc/html/HDF5Array.html) package to interface with [anndata](https://anndata.readthedocs.io/en/stable/) objects. This enhances memory efficiency and storage management, making it ideal for handling large-scale datasets, especially in the context of whole-genome methylation studies.
 
 - **Fast DMR Detection**: 
-  - The package leverages [Rcpp](https://cran.r-project.org/web/packages/Rcpp/index.
-html) for rapid and accurate identification of de novo differentially methylated 
-regions (DMRs).
+  - The package employs [Rcpp](https://cran.r-project.org/web/packages/Rcpp/index.html) for rapid and accurate identification of de novo differentially methylated regions (DMRs). This ensures that users can perform high-speed analysis on large genomic regions while maintaining statistical robustness.
 
-- **High-Throughput Compatibility**: 
-  - *methylTracer* efficiently handles large datasets, making it ideal for 
-  genome-wide methylation profiling.
+While several other packages in the Bioconductor ecosystem, such as [DSS](https://bioconductor.org/packages/release/bioc/html/DSS.html) and [methylKit](https://bioconductor.org/packages/release/bioc/html/methylKit.html), provide tools for methylation analysis, *methylTracer* distinguishes itself by offering an optimized memory model and high-throughput scalability. Unlike other packages, *methylTracer* integrates seamlessly with single-cell methylation data and supports the latest sequencing technologies, such as TAPS, enabling comprehensive analysis of methylation patterns across various biological conditions.
 
-With its advanced computational pipeline, *methylTracer* is a scalable and 
-powerful tool for researchers studying DNA methylation at both bulk and 
-single-cell resolution.
-
+With its advanced computational pipeline, *methylTracer* is a powerful tool for researchers studying DNA methylation at both bulk and single-cell resolution. By leveraging Bioconductor's infrastructure, it ensures reproducibility, scalability, and easy integration with other Bioconductor packages, enhancing its utility for large-scale, high-throughput epigenetic research.
 
 
 ```{r}
-if (!requireNamespace("BiocManager", quietly = TRUE)) {
-    install.packages("BiocManager")
-}
-BiocManager::install(methylTracer)
+#if (!requireNamespace("BiocManager", quietly = TRUE)) {
+#    install.packages("BiocManager")
+#}
+# BiocManager::install(methylTracer)
 ```
 
 ```{r}
+devtools::install_github("zetian-jia/methylTracer")
+
 library(methylTracer)
 ```
 
