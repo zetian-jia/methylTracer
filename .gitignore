@@ -7,7 +7,8 @@
 src/*.o
 src/*.so
 methylTracer.Rproj
-src/DMR_R1.o
+src/callDMR.o
+src/computeStat.o
 src/methylTracer.so
 src/normalization.o
 src/RcppExports.o

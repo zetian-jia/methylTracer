@@ -443,7 +443,7 @@ plot_dens <- function(met_obj = NULL, slot = NULL, bw = 0.5, vline = NULL) {
 #'
 #' @import ggplot2
 #' @importFrom rhdf5 h5ls h5read
-#' @importFrom dplyr filter
+#' @importFrom dplyr filter select mutate group_split group_by arrange all_of
 #' @importFrom magrittr %>%
 #' @export
 #' @examples

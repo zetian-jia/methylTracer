@@ -54,7 +54,13 @@ build_cpg <- function(
     ref_genome <- BSgenome::getBSgenome(genome = ref_genome)
     ## https://github.com/CompEpigen/methrix 
     ## https://support.bioconductor.org/p/95239/ 
-    chrs <- chrom_pat_fun(genome_type = genome_type)
+    if (genome_type == "human") {
+        chrs <- paste0("chr", c(1:22, "X", "Y"))
+    } else if (genome_type == "mouse") {
+        chrs <- paste0("chr", c(1:19, "X", "Y"))
+    } else {
+    stop("Please use 'human' or 'mouse'.")
+    }
     ## Find CpG sites in each chromosome
     message("Finding CpG sites in each chromosome...")
     cgs <- lapply(

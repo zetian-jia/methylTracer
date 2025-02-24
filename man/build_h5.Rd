@@ -10,7 +10,6 @@ build_h5(
   input_coverage = NULL,
   output_dir = NULL,
   output_file = NULL,
-  parallel = 1,
   annotation_file = NULL,
   chunk_size = 1000,
   level = 1
@@ -30,9 +29,6 @@ file will be saved.}
 
 \item{output_file}{HDF5 filename (without extension) for saving
 the methylation data.}
-
-\item{parallel}{Number of parallel processes for data processing
-(default is 1 for single-threaded).}
 
 \item{annotation_file}{Genomic annotation file path, as in
 \code{methylTracer::add_annotation}.}

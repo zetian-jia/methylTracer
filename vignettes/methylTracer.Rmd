@@ -53,10 +53,12 @@ large datasets.
 ## Key Features
 
 - **Optimized Storage & Memory Management**: 
-  - *methylTracer* utilizes the [HDF5Array](https://bioconductor.org/packages/release/bioc/html/HDF5Array.html) package to interface with [anndata](https://anndata.readthedocs.io/en/stable/) objects. This enhances memory efficiency and storage management, making it ideal for handling large-scale datasets, especially in the context of whole-genome methylation studies.
+
+*methylTracer* utilizes the [HDF5Array](https://bioconductor.org/packages/release/bioc/html/HDF5Array.html) package to interface with [anndata](https://anndata.readthedocs.io/en/stable/) objects. This enhances memory efficiency and storage management, making it ideal for handling large-scale datasets, especially in the context of whole-genome methylation studies.
 
 - **Fast DMR Detection**: 
-  - The package employs [Rcpp](https://cran.r-project.org/web/packages/Rcpp/index.html) for rapid and accurate identification of de novo differentially methylated regions (DMRs). This ensures that users can perform high-speed analysis on large genomic regions while maintaining statistical robustness.
+
+The package employs [Rcpp](https://cran.r-project.org/web/packages/Rcpp/index.html) for rapid and accurate identification of de novo differentially methylated regions (DMRs). This ensures that users can perform high-speed analysis on large genomic regions while maintaining statistical robustness.
 
 While several other packages in the Bioconductor ecosystem, such as [DSS](https://bioconductor.org/packages/release/bioc/html/DSS.html) and [methylKit](https://bioconductor.org/packages/release/bioc/html/methylKit.html), provide tools for methylation analysis, *methylTracer* distinguishes itself by offering an optimized memory model and high-throughput scalability. Unlike other packages, *methylTracer* integrates seamlessly with single-cell methylation data and supports the latest sequencing technologies, such as TAPS, enabling comprehensive analysis of methylation patterns across various biological conditions.
 

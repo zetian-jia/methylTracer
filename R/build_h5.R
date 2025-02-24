@@ -15,8 +15,6 @@
 #'      file will be saved.
 #' @param output_file HDF5 filename (without extension) for saving
 #'      the methylation data.
-#' @param parallel Number of parallel processes for data processing
-#'    (default is 1 for single-threaded).
 #' @param annotation_file Genomic annotation file path, as in
 #'      `methylTracer::add_annotation`.
 #' @param chunk_size Chunk size for reading data, default is 1e5.
@@ -100,7 +98,7 @@
 build_h5 <- function(
     sam_info = NULL, input_file = NULL, 
     input_coverage = NULL, output_dir = NULL,
-    output_file = NULL, parallel = 1, 
+    output_file = NULL, 
     annotation_file = NULL, chunk_size = 1e+03,
     level = 1
 ) {
