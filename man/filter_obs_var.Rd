@@ -25,10 +25,10 @@ to filter (e.g., 'coverage_cells').}
 to filter (e.g., 'coverage_feature').}
 
 \item{obs_cutoff}{A numeric value for filtering observations.
-Only observations with values ≥ this cutoff are retained.}
+Only observations with values greater it are retained.}
 
 \item{var_cutoff}{A numeric value for filtering variables.
-Only variables with values ≥ this cutoff are retained.}
+Only variables with values greater the cutoff are retained.}
 
 \item{sample_name}{Optional; a character string for sample-based filtering
 (not implemented).}

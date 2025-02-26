@@ -16,9 +16,6 @@ vignette: |
   %\VignetteEncoding{UTF-8}
 ---
 
-
-
-
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   tidy.opts = list(width.cutoff = 80),
@@ -73,7 +70,8 @@ With its advanced computational pipeline, *methylTracer* is a powerful tool for 
 ```
 
 ```{r}
-devtools::install_github("zetian-jia/methylTracer")
+# library(devtools)
+# devtools::install_github("zetian-jia/methylTracer")
 
 library(methylTracer)
 ```

@@ -212,9 +212,9 @@ loop_write_h5_vec <- function(infile_vec = NULL,
 #' @param var_obj A character string specifying the variable dataset 
 #'                to filter (e.g., 'coverage_feature').
 #' @param obs_cutoff A numeric value for filtering observations. 
-#'                   Only observations with values ≥ this cutoff are retained.
+#'                   Only observations with values greater it are retained.
 #' @param var_cutoff A numeric value for filtering variables. 
-#'                   Only variables with values ≥ this cutoff are retained.
+#'                   Only variables with values greater the cutoff are retained.
 #' @param sample_name Optional; a character string for sample-based filtering 
 #'                    (not implemented).
 #' @param marker_name Optional; a character string for marker-based filtering 
