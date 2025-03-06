@@ -349,7 +349,6 @@ DataFrame calldmrs_turbo(DataFrame DMLresult, //callDMRCpp
   //   Rcout << "CpG count=" << filtered_nCG[i] << std::endl;
   // }
 
-  //Rcout << "=== End of Index Debug Information ===\n" << std::endl;
 
   // 6. Subsequent code uses dmrs instead of dmrs
   if (flag_multifactor) {

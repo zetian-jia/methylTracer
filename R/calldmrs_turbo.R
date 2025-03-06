@@ -348,7 +348,7 @@ calldmrs_turbo <- function(
     start_time <- Sys.time()
     DMLresult <- rhdf5::h5read(
       met_obj@seed@filepath, "uns/dmrs_results")
-    message("============================== \n")
+    message("\n")
     total_CG_sites <- dim(DMLresult)[1]
     col_1 <- paste0("mean_", case_group)
     col_2 <- paste0("mean_", ctrl_group)
@@ -367,7 +367,6 @@ calldmrs_turbo <- function(
     end_time <- Sys.time()  # End timing
     elapsed_time <- as.numeric(difftime(end_time, start_time, units = "secs"))
     message(sprintf("Elapsed time: %.2f seconds\n", elapsed_time))
-    message("==============================")
     colnames(dmrs_res)[colnames(dmrs_res) ==
         "meanMethy1"] <- col_1
     colnames(dmrs_res)[colnames(dmrs_res) ==

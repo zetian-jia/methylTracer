@@ -338,7 +338,7 @@ build_count_matrix <- function(
 
     # message('Successfully merged all sample matrices')
     message("\n")
-    message(">>>>>>>>>> Count matrix build completed <<<<<<<<<<\n")
+    message("Count matrix build completed\n")
     # Clean up temporary files message('Cleaning up temporary files...')
     cleanup_cmd <- paste0(
         "rm ", file.path(path_dir, paste0("map_*")),
@@ -386,8 +386,7 @@ build_count_matrix <- function(
             )
         )
     )
-    # message('\n========================================')
-    message("\n>>>>>>>>>> methylTracer execution completed <<<<<<<<<<")
+    message("\nmethylTracer execution completed")
 }
 
 ## build_count_matrix step1
