@@ -62,17 +62,15 @@ While several other packages in the Bioconductor ecosystem, such as [DSS](https:
 With its advanced computational pipeline, *methylTracer* is a powerful tool for researchers studying DNA methylation at both bulk and single-cell resolution. By leveraging Bioconductor's infrastructure, it ensures reproducibility, scalability, and easy integration with other Bioconductor packages, enhancing its utility for large-scale, high-throughput epigenetic research.
 
 
-```{r}
+```{r eval=FALSE}
 #if (!requireNamespace("BiocManager", quietly = TRUE)) {
 #    install.packages("BiocManager")
 #}
 # BiocManager::install(methylTracer)
+# devtools::install_github("zetian-jia/methylTracer")
 ```
 
 ```{r}
-# library(devtools)
-# devtools::install_github("zetian-jia/methylTracer")
-
 library(methylTracer)
 ```
 
