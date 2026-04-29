@@ -3,6 +3,7 @@
 #' Utility functions to ensure proper HDF5 file handle management
 #' and prevent file handle leaks through RAII-style resource management.
 #'
+#' @name h5_utils
 #' @keywords internal
 NULL
 

@@ -1,54 +1,65 @@
 url: https://zetian-jia.github.io/methylTracer
 
-template:
-  bootstrap: 5
-  bootswatch: flatly
-
-home:
-  title: methylTracer — DNA Methylation Analysis for TAPS and WGBS
-  description: >
-    An R package for whole-genome DNA methylation analysis with Rcpp acceleration,
-    supporting TAPS and WGBS data. Features include fast DMR detection and
-    memory-efficient computation via DelayedArray.
-
-navbar:
-  structure:
-    left:  [intro, reference, articles, news]
-    right: [search, github]
-  components:
-    github:
-      icon: fab fa-github
-      href: https://github.com/zetian-jia/methylTracer
-      aria-label: GitHub
-
 reference:
-  - title: "Input / Output"
-    desc: "Functions for reading and writing methylation data."
+  - title: "Data Input / Output"
     contents:
-      - matches("read|write|load|save|import|export")
+      - build_count_matrix
+      - build_h5
+      - build_met_obj
+      - h5_dataset_exists
+      - h5_read_safe
+      - h5_write_safe
+      - with_h5file_safe
+      - write_cell_file
+
   - title: "DMR Detection"
-    desc: "Functions for identifying differentially methylated regions."
     contents:
-      - matches("dmr|DMR|findDMR|callDMR")
-  - title: "Methylation Quantification"
-    desc: "Functions for computing methylation levels."
+      - calldmrs_turbo
+      - pre_calldmrs
+      - implant_dmrs
+      - dmrs_to_sce_memory
+
+  - title: "Single-Cell Conversion"
     contents:
-      - matches("methyl|Methyl|beta|coverage")
+      - met_to_sce
+      - sce_to_met
+      - create_cpg_universe
+
+  - title: "Quality Control"
+    contents:
+      - compute_qc_value
+      - filter_obs_var
+      - impute_met_obj
+
+  - title: "Clustering"
+    contents:
+      - cluster_met_cells
+
+  - title: "Accessors"
+    contents:
+      - metObs
+      - metVar
+      - metX
+      - computeObs
+      - computeVar
+
   - title: "Visualization"
-    desc: "Plotting utilities."
     contents:
-      - matches("plot|Plot|gg|vis")
+      - plot_dens
+      - plot_dmrs
+      - plot_hist
+      - plot_scatter
+
+  - title: "Simulation"
+    contents:
+      - simulate_scBS_data
+      - simulate_single_cell
+      - print.scBS_simulation
+      - summary.scBS_simulation
+
   - title: "Utilities"
-    desc: "Helper and utility functions."
     contents:
-      - everything()
-
-articles:
-  - title: "Get Started"
-    contents:
-      - methylTracer
-
-news:
-  releases:
-  - text: "Version 0.99.2"
-    href: https://github.com/zetian-jia/methylTracer/releases/tag/v0.99.2
+      - safe_system2
+      - validate_inputs
+      - validate_path_safety
+      - validate_sample_names

@@ -48,7 +48,7 @@ Config/testthat/edition: 3
 biocViews: Epigenetics, DifferentialMethylation, WholeGenome, SingleCell, GeneRegulation, Classification, Coverage
 VignetteBuilder: knitr
 BiocType: Software
-URL: https://github.com/zetian-jia/methylTracer
+URL: https://github.com/zetian-jia/methylTracer, https://zetian-jia.github.io/methylTracer
 BugReports: https://github.com/zetian-jia/methylTracer/issues
 LinkingTo: 
     Rcpp

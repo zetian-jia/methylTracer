@@ -22,3 +22,6 @@ inst/doc
 
 01_build.sh
 02_tar_pkg.sh
+
+# pkgdown local build output (remote CI builds this automatically)
+docs/
