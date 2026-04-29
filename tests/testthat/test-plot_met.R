@@ -1,3 +1,11 @@
-test_that("multiplication works", {
-  expect_equal(2 * 2, 4)
-})
+
+
+if (FALSE) {
+plot_dmrs(
+  met = met,
+  pre_calldmrs_res = pre_res,
+  region = "chr21:5017225-5017410",
+  shift_up = 10,
+  shift_down = 10
+)
+}

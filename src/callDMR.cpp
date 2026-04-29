@@ -1,4 +1,6 @@
 #include <Rcpp.h>
+#include <vector>
+#include <string>
 using namespace Rcpp;
 
 // Forward declaration - remove default parameters
@@ -84,16 +86,25 @@ DataFrame findBumpsCpp(CharacterVector chr,
   IntegerMatrix regions = findRegionCpp(chr, pos, sep);
   int ncol = regions.ncol();
 
-  // Pre-allocate result containers
-  const int init_capacity = 100000; // Initial capacity
-  CharacterVector result_chr(init_capacity);
-  NumericVector result_start(init_capacity);
-  NumericVector result_end(init_capacity);
-  NumericVector result_length(init_capacity);
-  IntegerVector result_idx_start(init_capacity);
-  IntegerVector result_idx_end(init_capacity);
-
-  int result_idx = 0;
+  // ============================================================
+  // CRITICAL FIX: Use std::vector with RAII instead of pre-allocation
+  // This prevents memory bomb (3GB allocation) and ensures cleanup
+  // ============================================================
+  std::vector<std::string> result_chr;
+  std::vector<double> result_start;
+  std::vector<double> result_end;
+  std::vector<double> result_length;
+  std::vector<int> result_idx_start;
+  std::vector<int> result_idx_end;
+  
+  // Reserve reasonable initial capacity (typical datasets have < 10,000 DMRs)
+  const int reasonable_capacity = 10000;
+  result_chr.reserve(reasonable_capacity);
+  result_start.reserve(reasonable_capacity);
+  result_end.reserve(reasonable_capacity);
+  result_length.reserve(reasonable_capacity);
+  result_idx_start.reserve(reasonable_capacity);
+  result_idx_end.reserve(reasonable_capacity);
 
   // Loop through each region
   for (int i = 0; i < ncol; ++i) {
@@ -157,42 +168,44 @@ DataFrame findBumpsCpp(CharacterVector chr,
 
       // Check significant point ratio
       if (static_cast<double>(count) / total > pct_sig) {
-        if (result_idx == result_chr.size()) {
-          // Dynamic reallocation
-          int new_capacity = result_chr.size() * 2;
-          result_chr = CharacterVector(new_capacity);
-          result_start = NumericVector(new_capacity);
-          result_end = NumericVector(new_capacity);
-          result_length = NumericVector(new_capacity);
-          result_idx_start = IntegerVector(new_capacity);
-          result_idx_end = IntegerVector(new_capacity);
+        // ============================================================
+        // CRITICAL FIX: Use push_back instead of manual index tracking
+        // std::vector automatically grows and manages memory
+        // ============================================================
+        
+        // Bounds check before accessing chr vector
+        int chr_idx = region_start + start;
+        if (chr_idx < 0 || chr_idx >= chr.length()) {
+          stop("Index out of bounds when accessing chr vector");
         }
-
-        // Save results
-        result_chr[result_idx] = chr[region_start + start];
-        result_start[result_idx] = pos_region[start];
-        result_end[result_idx] = pos_region[end];
-        result_length[result_idx] = pos_region[end] - pos_region[start] + 1;
-        result_idx_start[result_idx] = region_start + start;
-        result_idx_end[result_idx] = region_start + end;
-        ++result_idx;
+        
+        result_chr.push_back(as<std::string>(chr[chr_idx]));
+        result_start.push_back(pos_region[start]);
+        result_end.push_back(pos_region[end]);
+        result_length.push_back(pos_region[end] - pos_region[start] + 1);
+        result_idx_start.push_back(region_start + start);
+        result_idx_end.push_back(region_start + end);
       }
     }
   }
 
   // If no results, return empty DataFrame
-  if (result_idx == 0) {
+  if (result_chr.empty()) {
     return DataFrame::create();
   }
 
-  // Return results, trim extra parts
+  // ============================================================
+  // CRITICAL FIX: Convert std::vector to Rcpp vectors efficiently
+  // wrap() function creates Rcpp vectors from STL containers
+  // This is exception-safe and memory-efficient
+  // ============================================================
   return DataFrame::create(
-    _["chr"] = result_chr[Range(0, result_idx - 1)],
-                         _["start"] = result_start[Range(0, result_idx - 1)],
-                                                  _["end"] = result_end[Range(0, result_idx - 1)],
-                                                                       _["length"] = result_length[Range(0, result_idx - 1)],
-                                                                                                  _["idx.start.global"] = result_idx_start[Range(0, result_idx - 1)],
-                                                                                                                                          _["idx.end.global"] = result_idx_end[Range(0, result_idx - 1)]
+    _["chr"] = wrap(result_chr),
+    _["start"] = wrap(result_start),
+    _["end"] = wrap(result_end),
+    _["length"] = wrap(result_length),
+    _["idx.start.global"] = wrap(result_idx_start),
+    _["idx.end.global"] = wrap(result_idx_end)
   );
 }
 
@@ -349,6 +362,7 @@ DataFrame calldmrs_turbo(DataFrame DMLresult, //callDMRCpp
   //   Rcout << "CpG count=" << filtered_nCG[i] << std::endl;
   // }
 
+  //Rcout << "=== End of Index Debug Information ===\n" << std::endl;
 
   // 6. Subsequent code uses dmrs instead of dmrs
   if (flag_multifactor) {
@@ -358,6 +372,12 @@ DataFrame calldmrs_turbo(DataFrame DMLresult, //callDMRCpp
     for (int i = 0; i < dmrs.nrows(); i++) {
       double sum_stat = 0;
       for (int j = filtered_idx_start[i]; j <= filtered_idx_end[i]; j++) {
+        // ============================================================
+        // CRITICAL FIX: Add bounds checking before array access
+        // ============================================================
+        if (j < 0 || j >= stat.length()) {
+          stop("Index out of bounds when accessing stat vector at position %d", j);
+        }
         if (!R_IsNA(stat[j])) {
           sum_stat += stat[j];
         }
@@ -368,11 +388,11 @@ DataFrame calldmrs_turbo(DataFrame DMLresult, //callDMRCpp
     // Return results
     return DataFrame::create(
       _["chr"] = dmrs["chr"],
-                     _["start"] = dmrs["start"],
-                                      _["end"] = dmrs["end"],
-                                                     _["length"] = dmrs["length"],
-                                                                       _["nCG"] = filtered_nCG,  // Use newly computed nCG
-                                                                       _["areaStat"] = areaStat
+      _["start"] = dmrs["start"],
+      _["end"] = dmrs["end"],
+      _["length"] = dmrs["length"],
+      _["nCG"] = filtered_nCG,  // Use newly computed nCG
+      _["areaStat"] = areaStat
     );
   } else {
     NumericVector meanMethy1(dmrs.nrows());
@@ -391,8 +411,12 @@ DataFrame calldmrs_turbo(DataFrame DMLresult, //callDMRCpp
       // Rcout << "Start index: " << filtered_idx_start[i] << ", End index: " << filtered_idx_end[i] << std::endl;
 
       for (int j = filtered_idx_start[i]; j <= filtered_idx_end[i]; j++) {
-        if (j >= mu1.length() || j >= mu2.length() || j >= stat.length()) {
-          stop("Index out of bounds error in methylation calculation");
+        // ============================================================
+        // CRITICAL FIX: Enhanced bounds checking with informative error
+        // ============================================================
+        if (j < 0 || j >= mu1.length() || j >= mu2.length() || j >= stat.length()) {
+          stop("Index out of bounds error in methylation calculation: j=%d, mu1.length=%d, mu2.length=%d, stat.length=%d", 
+               j, mu1.length(), mu2.length(), stat.length());
         }
         // Print the current position's value
         // Rcout << "Position " << j << ": ";
@@ -426,14 +450,14 @@ DataFrame calldmrs_turbo(DataFrame DMLresult, //callDMRCpp
     // Return results
     return DataFrame::create(
       _["chr"] = dmrs["chr"],
-                     _["start"] = dmrs["start"],
-                                      _["end"] = dmrs["end"],
-                                                     _["length"] = dmrs["length"],
-                                                                       _["nCG"] = filtered_nCG,  // Use newly computed nCG
-                                                                       _["meanMethy1"] = meanMethy1,
-                                                                       _["meanMethy2"] = meanMethy2,
-                                                                       _["diff.Methy"] = meanMethy1 - meanMethy2,
-                                                                       _["areaStat"] = areaStat
+      _["start"] = dmrs["start"],
+      _["end"] = dmrs["end"],
+      _["length"] = dmrs["length"],
+      _["nCG"] = filtered_nCG,  // Use newly computed nCG
+      _["meanMethy1"] = meanMethy1,
+      _["meanMethy2"] = meanMethy2,
+      _["diff.Methy"] = meanMethy1 - meanMethy2,
+      _["areaStat"] = areaStat
     );
   }
 }

@@ -2,10 +2,10 @@
 % Please edit documentation in R/calldmrs_turbo.R
 \name{calldmrs_turbo}
 \alias{calldmrs_turbo}
-\title{Call DMRS Turbo}
+\title{Call differentially methylated regions (DMRs) using the turbo algorithm}
 \usage{
 calldmrs_turbo(
-  met_obj = NULL,
+  met = NULL,
   p_threshold = 0.05,
   minlen = 50L,
   minCG = 3L,
@@ -17,129 +17,174 @@ calldmrs_turbo(
 )
 }
 \arguments{
-\item{met_obj}{A methylTracer object containing methylation data.}
+\item{met}{A \code{methylTracer} object containing region-level
+methylation data and a reference to the underlying HDF5 file.
+The object must have been processed with \code{\link{pre_calldmrs}}
+beforehand.}
 
-\item{p_threshold}{p-value threshold for calling DMRs (default: 0.05).}
+\item{p_threshold}{Numeric scalar. Per-CpG p-value threshold used
+by the turbo algorithm to define “significant” CpGs
+(default: \code{0.05}).}
 
-\item{minlen}{Minimum length of a DMR, in base pairs (default: 500).}
+\item{minlen}{Integer scalar. Minimum DMR length in base pairs
+(default: \code{50}).}
 
-\item{minCG}{Minimum number of CG sites within a DMR (default: 3).}
+\item{minCG}{Integer scalar. Minimum number of CpG sites required
+for a region to be considered a DMR (default: \code{3}).}
 
-\item{dis_merge}{Distance for merging DMRs (default: 200).}
+\item{dis_merge}{Numeric scalar. Maximum distance (in base pairs)
+between adjacent significant segments within a region to be
+merged into a single DMR (default: \code{100}).}
 
-\item{pct_sig}{Percentage of significant sites required for a DMR
-to be considered significant (default: 0.1).}
+\item{pct_sig}{Numeric scalar between 0 and 1. Minimum fraction of
+CpG sites within a candidate region that must pass the
+\code{p_threshold} to retain the region (default: \code{0.1}).}
 
-\item{sep}{Window size for separating potential DMRs (default: 5000).}
+\item{sep}{Numeric scalar. Genomic distance (in base pairs) used to
+split the genome into independent windows for bump finding
+(default: \code{5000}).}
 
-\item{case_group}{The name of the case group in the methylation data
-(default: 'case').}
+\item{case_group}{Character scalar. Label of the case group in the
+sample metadata (default: \code{"case"}). Used only to rename
+region-level mean methylation columns in the output.}
 
-\item{ctrl_group}{The name of the control group in the methylation data
-(default: 'ctrl').}
+\item{ctrl_group}{Character scalar. Label of the control group in
+the sample metadata (default: \code{"ctrl"}).}
 }
 \value{
-A GRanges object containing the identified DMRs, which can be
-saved or plotted. The GRanges object will include the genomic
-coordinates and methylation statistics of the DMRs.
+A \link[GenomicRanges]{GRanges} object with one row per DMR. The
+metadata columns include:
+\itemize{
+\item \code{nCG}: number of CpG sites in the region.
+\item \code{md}: mean methylation difference
+(\code{mean_<case_group> - mean_<ctrl_group>}).
+\item \code{dmrs_length}: region length in base pairs.
+\item \code{mean_<case_group>}: mean methylation proportion (0–1)
+in the case group across the region.
+\item \code{mean_<ctrl_group>}: mean methylation proportion (0–1)
+in the control group across the region.
+\item \code{areaStat}: sum of per-CpG test statistics within the
+region, reflecting both effect size and consistency.
+}
+If no DMRs are detected, an empty \code{GRanges} object is returned.
 }
 \description{
-This function identifies Differentially Methylated Regions
-(DMRs) based on methylation data using the turbo algorithm.
-It calls DMRs by evaluating methylation differences between
-case and control groups, applying various thresholds to
-filter the results.
+Identify differentially methylated regions (DMRs) from a
+\code{methylTracer} object using the C++ \emph{turbo} DMR-calling
+backend. The function uses per-CpG test statistics and p-values
+stored in the HDF5 file (under \code{"/uns/dmrs_results"}) to
+detect contiguous regions enriched for significant CpG sites.
 }
 \details{
-This function computes DMRs by first calculating the methylation
-difference between case and control groups. It filters the results
-based on various thresholds, including p-value, minimum length,
-and the number of CG sites within a DMR. The final DMRs are merged
-based on the specified distance threshold and can be visualized
-or saved for further analysis.
+This function is intended to be run \strong{after}
+\code{\link{pre_calldmrs}}, which computes per-CpG statistics
+(means, variances, t-statistics, p-values, FDR) and stores them as a
+table in \code{"/uns/dmrs_results"} in the underlying HDF5 file.
+
+Internally, the function:
+\enumerate{
+\item Reads \code{"/uns/dmrs_results"} from the HDF5 file attached
+to \code{met}.
+\item Converts the table to a data frame and assigns standard
+column names (\code{chr}, \code{pos}, \code{mu1},
+\code{mu2}, \code{diff}, \code{diff.se}, \code{stat},
+\code{pval}, \code{fdr}).
+\item Calls the C++ routine \code{calldmrs_turbo} to group CpGs
+into candidate regions based on the p-value threshold and
+genomic distance rules, and to compute region-level
+statistics:
+mean methylation in each group, methylation difference,
+and area statistic (sum of per-CpG test statistics).
+\item Returns a \link[GenomicRanges]{GRanges} object with DMR
+coordinates and associated statistics.
+}
+
+Methylation values are assumed to be stored as proportions in
+\eqn{[0, 1]}. Region-level mean methylation columns in the return
+object are renamed to \code{mean_<case_group>} and
+\code{mean_<ctrl_group>} for convenience.
 }
 \examples{
+\donttest{
 output_dir <- tempdir()
 
 sam_info_df <- data.frame(
-  sample_name = c(
-    'sample_1.bed', 'sample_2.bed',
-    'sample_3.bed', 'sample_4.bed',
-    'sample_5.bed', 'sample_6.bed',
-    'sample_7.bed', 'sample_8.bed'
-  ),
-  group = c(rep('case', 4), rep('ctrl', 4))
+  sample_name = paste0("sample_", 1:8),
+  group       = c(rep("case", 4), rep("ctrl", 4)),
+  stringsAsFactors = FALSE
 )
-sam_info <- file.path(output_dir, 'sample_info.csv')
+sam_info <- file.path(output_dir, "sample_info.csv")
 
+## toy methylation matrix (proportions 0–1)
 input_file_df <- data.frame(
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
   ),
-  sample_1.bed = c(100, 200, 600, 900),
-  sample_2.bed = c(100, 200, 600, 900),
-  sample_3.bed = c(100, 200, 600, 900),
-  sample_4.bed = c(100, 200, 600, 900),
-  sample_5.bed = c(800, 900, 100, 50),
-  sample_6.bed = c(800, 900, 100, 50),
-  sample_7.bed = c(800, 900, 100, 50),
-  sample_8.bed = c(800, 900, 100, 50)
+  sample_1    = c(0.10, 0.20, 0.60, 0.90),
+  sample_2    = c(0.10, 0.20, 0.60, 0.90),
+  sample_3    = c(0.10, 0.20, 0.60, 0.90),
+  sample_4    = c(0.10, 0.20, 0.60, 0.90),
+  sample_5    = c(0.80, 0.90, 0.10, 0.05),
+  sample_6    = c(0.80, 0.90, 0.10, 0.05),
+  sample_7    = c(0.80, 0.90, 0.10, 0.05),
+  sample_8    = c(0.80, 0.90, 0.10, 0.05)
 )
-input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 
 annotation_file_df <- data.frame(
-  chr = rep('chr1', 4),
-  start = c(1000, 2000, 3000, 4000),
-  end = c(2000, 3000, 4000, 5000),
-  SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
+  chr         = rep("chr1", 4),
+  start       = c(1000L, 2000L, 3000L, 4000L),
+  end         = c(2000L, 3000L, 4000L, 5000L),
+  SYMBOL      = c("gene1", "gene2", "gene3", "gene4"),
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  )
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
+  ),
+  stringsAsFactors = FALSE
 )
-annotation_file <- file.path(output_dir, 'annotation.bed')
+annotation_file <- file.path(output_dir, "annotation.bed")
 
-output_file <- 'methylTracer_obj_test.h5'
+output_file <- "methylTracer_obj_test.h5"
 
-unlink(file.path(output_dir, output_file),
-  recursive = TRUE
-)
+unlink(file.path(output_dir, output_file), recursive = TRUE)
 
-write.csv(sam_info_df, sam_info,
-  row.names = FALSE
-)
+write.csv(sam_info_df, sam_info, row.names = FALSE)
 write.table(input_file_df, input_file,
-  sep = '\t', row.names = FALSE
-)
+            sep = "\t", row.names = FALSE, quote = FALSE)
 write.table(annotation_file_df, annotation_file,
-  sep = '\t', row.names = FALSE
-)
+            sep = "\t", row.names = FALSE, quote = FALSE)
 
 build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
+  sam_info       = sam_info,
+  input_file     = input_file,
+  output_dir     = output_dir,
+  output_file    = output_file,
   annotation_file = annotation_file
 )
 
-met_obj <- build_met_obj(
+met <- build_met_obj(
   file.path(output_dir, output_file),
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 
 pre_res <- pre_calldmrs(
-  met_obj = met_obj,
-  group_colname = 'group',
-  case_group = 'case',
-  control_group = 'ctrl'
+  met           = met,
+  group_colname = "group",
+  case_group    = "case",
+  control_group = "ctrl"
 )
+
 dmr_res <- calldmrs_turbo(
-  met_obj = met_obj,
-  p_threshold = 0.9,
-  case_group = "case",
-  ctrl_group = "ctrl"
+  met         = met,
+  p_threshold = 0.05,
+  case_group  = "case",
+  ctrl_group  = "ctrl"
 )
+}
+}
+\seealso{
+\code{\link{pre_calldmrs}} for generating the per-CpG statistics
+that this function consumes.
 }

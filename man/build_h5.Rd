@@ -2,7 +2,7 @@
 % Please edit documentation in R/build_h5.R
 \name{build_h5}
 \alias{build_h5}
-\title{Build Standard HDF5 File for methylTracer Input}
+\title{Create HDF5 file for methylTracer input}
 \usage{
 build_h5(
   sam_info = NULL,
@@ -11,110 +11,128 @@ build_h5(
   output_dir = NULL,
   output_file = NULL,
   annotation_file = NULL,
-  chunk_size = 1000,
-  level = 1
+  chunk_size = 1e+06,
+  level = 1,
+  show_progress = getOption("methylTracer.show_progress", TRUE)
 )
 }
 \arguments{
-\item{sam_info}{path to file containing metadata for each sample.
-The first column must be named 'sample_name'.}
+\item{sam_info}{Character string. Path to a CSV file containing
+metadata for each sample. The file must contain a column named
+\code{"sample_name"}, whose values correspond to the column names
+of \code{input_file} (excluding the first marker column).}
 
-\item{input_file}{Required; dataframe containing methylation signal.}
+\item{input_file}{Character string. Path to the methylation matrix
+(typically produced by \code{\link{build_count_matrix}}). The first
+column must be \code{marker_name}, and the remaining columns are
+sample-wise methylation proportions (0–1).}
 
-\item{input_coverage}{Optional; coverage dataframe
-(default from 'methylTracer::build_count_matrix').}
+\item{input_coverage}{Optional character string. Path to the coverage
+matrix with the same structure as \code{input_file} (first column
+\code{marker_name}, remaining columns are coverage values). If
+\code{NULL} (default), coverage is not written.}
 
-\item{output_dir}{Path to the output directory where the HDF5
-file will be saved.}
+\item{output_dir}{Character string. Directory where the HDF5 file
+will be saved. Created if it does not exist.}
 
-\item{output_file}{HDF5 filename (without extension) for saving
-the methylation data.}
+\item{output_file}{Character string. File name of the HDF5 file to
+create inside \code{output_dir}.}
 
-\item{annotation_file}{Genomic annotation file path, as in
-\code{methylTracer::add_annotation}.}
+\item{annotation_file}{Character string. Path to the genomic annotation
+file (e.g. \code{"3.ann.bed"}) produced by
+\code{\link{build_count_matrix}}. The file is expected to have a
+header and one row per marker.}
 
-\item{chunk_size}{Chunk size for reading data, default is 1e5.}
+\item{chunk_size}{Integer. Number of rows to read from the input text
+file per chunk when streaming into HDF5. Default is \code{1e6}.
+Smaller values reduce memory usage but may be slower.}
 
-\item{level}{Compression level (1-9), default is 1.
-Higher values provide better compression but may increase
-processing time.}
+\item{level}{Integer. Compression level for the \code{"X"} and
+\code{"/uns/coverage"} datasets. A value between 0 (no compression)
+and 9 (maximum compression). Default is \code{1}.}
+
+\item{show_progress}{Logical. Whether to display a text progress bar
+while streaming data into the HDF5 file. Default is
+\code{getOption("methylTracer.show_progress", TRUE)}.}
 }
 \value{
-Creates an HDF5 file with:
+Invisibly returns the path to the created HDF5 file. The function is
+called for its side effects; it writes the following groups/datasets:
 \itemize{
-\item The methylation data matrix ('X' group).
-\item Sample information ('obs' group).
-\item Marker (genomic) information ('var' group).
-\item Genomic annotation data.
+\item \code{"X"}: dense double matrix of methylation proportions
+(rows = markers, cols = samples).
+\item \code{"/uns/coverage"}: dense double matrix of coverage
+(optional).
+\item \code{"/obs/"}: one dataset per column of \code{sam_info}.
+\item \code{"/var/"}: one dataset per column of \code{annotation_file}.
 }
 }
 \description{
-This function creates an HDF5 file containing
-methylation data and metadata.
+Create an HDF5 file that stores region-level methylation proportions
+(0–1), coverage, sample metadata, and marker annotation in a layout
+compatible with \pkg{methylTracer}.
 }
 \details{
-The main methylation data matrix is stored under the
-'X' group as a dense matrix in the HDF5 file.
+The main methylation data matrix is written as a dense double-precision
+dataset named \code{"X"} at the root of the HDF5 file. Each row
+corresponds to a genomic marker (region), and each column corresponds
+to a sample. Values are methylation proportions in the range
+\eqn{[0, 1]}.
+
+Coverage data, if provided, are stored under the dataset
+\code{"/uns/coverage"} with the same shape as \code{"X"}.
+
+Sample metadata are stored under the \code{"/obs"} group, with one
+dataset per column in \code{sam_info}. Marker annotation columns are
+stored similarly under the \code{"/var"} group, one dataset per
+annotation column.
 }
 \examples{
+## Minimal toy example (0–1 methylation proportions)
 output_dir <- tempdir()
 
 sam_info_df <- data.frame(
-  sample_name = c(
-    'sample_1.bed', 'sample_2.bed',
-    'sample_3.bed', 'sample_4.bed'
-  ),
-  group = c(rep('case', 2), rep('ctrl', 2))
+  sample_name = c("sample_1", "sample_2"),
+  group       = c("case", "ctrl"),
+  stringsAsFactors = FALSE
 )
-sam_info <- file.path(output_dir, 'sample_info.csv')
+sam_info <- file.path(output_dir, "sample_info.csv")
 
 input_file_df <- data.frame(
-  marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  ),
-  sample_1.bed = c(100, 200, 600, 900),
-  sample_2.bed = c(100, 200, 600, 900),
-  sample_3.bed = c(200, 400, 700, 1000),
-  sample_4.bed = c(300, 400, 700, 1000)
+  marker_name = c("chr1_1000_2000", "chr1_2000_3000", "chr1_3000_4000"),
+  sample_1    = c(0.10, 0.50, 0.90),
+  sample_2    = c(0.20, 0.40, 0.80)
 )
-input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 
 annotation_file_df <- data.frame(
-  chr = rep('chr1', 4),
-  start = c(1000, 2000, 3000, 4000),
-  end = c(2000, 3000, 4000, 5000),
-  SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
-  marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  )
+  chr         = rep("chr1", 3),
+  start       = c(1000L, 2000L, 3000L),
+  end         = c(2000L, 3000L, 4000L),
+  SYMBOL      = c("gene1", "gene2", "gene3"),
+  marker_name = c("chr1_1000_2000", "chr1_2000_3000", "chr1_3000_4000"),
+  stringsAsFactors = FALSE
 )
-annotation_file <- file.path(
-  output_dir,
-  'annotation.bed'
-)
+annotation_file <- file.path(output_dir, "annotation.bed")
 
-output_file <- 'methylTracer_obj_test.h5'
+output_file <- "methylTracer_obj_test.h5"
 
-# Remove the output file if it already exists
+## Write input files
+write.csv(sam_info_df, sam_info, row.names = FALSE)
+write.table(input_file_df, input_file, sep = "\t", row.names = FALSE,
+            quote = FALSE)
+write.table(annotation_file_df, annotation_file, sep = "\t",
+            row.names = FALSE, quote = FALSE)
+
+## Remove existing output if present
 unlink(file.path(output_dir, output_file), recursive = TRUE)
 
-# Write the sample information, input data, and annotation
-
-write.csv(sam_info_df, sam_info, row.names = FALSE)
-write.table(input_file_df, input_file, sep = '\t', row.names = FALSE)
-write.table(annotation_file_df, annotation_file,
-  sep = '\t', row.names = FALSE
-)
-
-# Run the function
+## Run the function
 build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
+  sam_info       = sam_info,
+  input_file     = input_file,
+  output_dir     = output_dir,
+  output_file    = output_file,
   annotation_file = annotation_file
 )
-
 }

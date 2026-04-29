@@ -19,3 +19,6 @@ src/RcppExports.o
 *.o
 inst/doc
 *.rds
+
+01_build.sh
+02_tar_pkg.sh

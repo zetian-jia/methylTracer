@@ -2,7 +2,7 @@
 % Please edit documentation in R/met_class.R
 \name{build_met_obj}
 \alias{build_met_obj}
-\title{Create a methylTracer object from HDF5 file}
+\title{Create a methylTracer object from an HDF5 file}
 \usage{
 build_met_obj(
   h5_file = NULL,
@@ -11,59 +11,85 @@ build_met_obj(
 )
 }
 \arguments{
-\item{h5_file}{Path to the HDF5 file containing methylation data.
-This file should have datasets for both sample and marker
-identifiers, as well as the methylation data.}
+\item{h5_file}{Character string giving the path to the HDF5 file
+containing methylation data and metadata.}
 
-\item{sample_name}{Name of the dataset containing sample identifiers
-in the /obs group. This should match the dataset
-name where the sample identifiers are stored.}
+\item{sample_name}{Character scalar. Name of the dataset inside the
+\code{"/obs"} group that contains sample identifiers
+(default: \code{"sample_name"}). The corresponding HDF5 path is
+\code{"/obs/<sample_name>"}.}
 
-\item{marker_name}{Name of the dataset containing marker identifiers
-in the /var group. This should match the dataset
-name where the marker identifiers are stored.}
+\item{marker_name}{Character scalar. Name of the dataset inside the
+\code{"/var"} group that contains marker identifiers
+(default: \code{"marker_name"}). The corresponding HDF5 path is
+\code{"/var/<marker_name>"}.}
 }
 \value{
-A methylTracer object containing the methylation data and metadata.
-This object will be structured with the sample and marker data
-from the HDF5 file.
+A \code{methylTracer} object with:
+\itemize{
+\item the main assay backed by an \code{\link[HDF5Array]{HDF5Array}}
+pointing to \code{"X"} in \code{h5_file};
+\item \code{marker_name}: an \code{HDF5Array} vector pointing to
+\code{"/var/<marker_name>"};
+\item \code{sample_name}: an \code{HDF5Array} vector pointing to
+\code{"/obs/<sample_name>"}.
+}
+If an error occurs (e.g. missing datasets), a diagnostic message is
+printed and \code{NULL} is returned.
 }
 \description{
-This function reads methylation data from an HDF5 file and constructs
-a methylTracer object containing the methylation data and associated
-metadata. The data should be structured with the sample identifiers
-stored in the /obs group and marker identifiers in the /var group.
+Construct a \code{methylTracer} object from an HDF5 file that stores
+methylation data and associated metadata. The HDF5 file is expected to
+contain a main assay dataset \code{"X"} and accompanying sample and
+marker identifiers organised in the \code{"/obs"} and \code{"/var"}
+groups, respectively.
+}
+\details{
+The typical layout of an HDF5 file for \pkg{methylTracer} is:
+\itemize{
+\item \code{"X"}: a 2D dataset (rows = markers/regions, cols = samples),
+storing methylation values as proportions in \eqn{[0, 1]}.
+\item \code{"/obs/<sample_name>"}: a 1D dataset containing sample IDs.
+\item \code{"/var/<marker_name>"}: a 1D dataset containing marker IDs,
+usually of the form \code{"chr_start_end"}.
+}
+
+This function wraps the main assay \code{"X"} and the specified
+\code{sample_name} and \code{marker_name} datasets into a
+\code{methylTracer} object using \pkg{HDF5Array} for on-disk storage.
 }
 \examples{
-toy_h5 <- system.file('extdata', 'toy.h5', package = 'HDF5Array')
-X <- HDF5Array(toy_h5, 'M1') # Load data matrix from HDF5 file
+suppressMessages(library(HDF5Array))
+toy_h5 <- system.file("extdata", "toy.h5", package = "HDF5Array")
+X <- HDF5Array::HDF5Array(toy_h5, "M1")
 
 num_rows <- dim(X)[1]
 start_values <- seq(from = 10000, by = 1000, length.out = num_rows)
 end_values <- start_values + 1000
-marker_name <- paste0('chr1_', start_values, '_', end_values)
-sample_name <- paste0('sample_', 1:dim(X)[2])
+marker_name <- paste0("chr1_", start_values, "_", end_values)
+sample_name <- paste0("sample_", seq_len(dim(X)[2]))
+group <- c(rep("A", 50), rep("B", 50), rep("C", 50))
+regul <- c(rep("exon", 50), rep("intron", 50), rep("TSS", 50))
 
 current_dir <- tempdir()
-met_obj_test <- paste0(current_dir, '/methylTracer_obj_test.h5')
-unlink(met_obj_test) # Remove existing file if it exists
+met_obj_test <- file.path(current_dir, "methylTracer_obj_test.h5")
+unlink(met_obj_test)  # Remove existing file if it exists
 
 rhdf5::h5createFile(met_obj_test)
-rhdf5::h5createGroup(met_obj_test, 'obs')
-rhdf5::h5createGroup(met_obj_test, 'var')
+rhdf5::h5createGroup(met_obj_test, "obs")
+rhdf5::h5createGroup(met_obj_test, "var")
 
-HDF5Array::writeHDF5Array(X, met_obj_test, 'X')
-rhdf5::h5write(marker_name, met_obj_test, 'var/marker_name')
-rhdf5::h5write(sample_name, met_obj_test, 'obs/sample_name')
+HDF5Array::writeHDF5Array(X, met_obj_test, "X")
+rhdf5::h5write(marker_name, met_obj_test, "var/marker_name")
+rhdf5::h5write(regul, met_obj_test, "var/regul")
+rhdf5::h5write(sample_name, met_obj_test, "obs/sample_name")
+rhdf5::h5write(group, met_obj_test, "obs/group")
 
-met_obj_test <- build_met_obj(met_obj_test,
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
+met_obj_test <- build_met_obj(
+  met_obj_test,
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 
 met_obj_test
-
-head(met_obs(met_obj_test))
-
-head(met_var(met_obj_test))
 }

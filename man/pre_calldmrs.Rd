@@ -2,122 +2,76 @@
 % Please edit documentation in R/calldmrs_turbo.R
 \name{pre_calldmrs}
 \alias{pre_calldmrs}
-\title{Compute Differentially Methylated Regions (DMRs) Preparation}
+\title{Prepare differential methylation analysis (DMR pre-computation)}
 \usage{
 pre_calldmrs(
-  met_obj = NULL,
-  group_colname = NULL,
-  case_group = NULL,
-  control_group = NULL
+  met,
+  group_colname = "group",
+  case_group = "case",
+  control_group = "ctrl"
 )
 }
 \arguments{
-\item{met_obj}{A methylTracer object containing methylation data.}
+\item{met}{A \code{methylTracer} object containing region-level
+methylation data and a reference to the underlying HDF5 file.}
 
-\item{group_colname}{Column name containing group information
-(default: 'group').}
+\item{group_colname}{Character scalar. Column name in the sample
+metadata that encodes the group labels (default: \code{"group"}).}
 
-\item{case_group}{Name of the case group in the data (default: 'case').}
+\item{case_group}{Character scalar. Label of the case group within
+\code{group_colname} (default: \code{"case"}).}
 
-\item{control_group}{Name of the control group in the data
-(default: 'ctrl').}
+\item{control_group}{Character scalar. Label of the control group
+within \code{group_colname} (default: \code{"ctrl"}).}
 }
 \value{
-DMLresult result in case and control adjusted in p.adj.
-A dataframe containing non-NA FDR values with integer positions.
-If no significant results are found, a message is displayed.
+A \code{data.frame} containing rows with non-\code{NA} FDR values.
+Columns include chromosome, genomic position, group-wise means and
+variances, test statistics, p-values, and FDR (exact column names
+depend on the C++ backend). If no significant results remain after
+filtering (i.e. the returned data frame has zero rows), a message
+is displayed and an empty data frame is returned.
+
+As a side effect, the function overwrites (if present) the following
+datasets in the underlying HDF5 file:
+\itemize{
+\item \code{"/uns/dmrs_results"} – filtered DMR table.
+\item \code{"/var/stat_results"} – full per-region statistics
+table produced by \code{compute_Stat()}.
+}
 }
 \description{
-This function processes methylation data, generates plots,
-computes statistical differences between case and control
-groups, and returns a dataframe of significant DMRs.
+Compute region-level differential methylation statistics between two
+groups (case vs control) based on a \code{methylTracer} object. The
+function ensures that group-wise methylation summaries exist, calls
+the statistical C++ backend, filters by FDR, and writes the results
+back into the HDF5 file.
 }
 \details{
-This function performs the following tasks:
-\itemize{
-\item Validates input arguments.
-\item Generates methylation statistics plots for the given groups.
-\item Computes statistical differences between the methylation levels of
-the case and control groups.
-\item Filters results based on False Discovery Rate (FDR) and returns
-a dataframe with non-NA FDR values.
+This function performs the following steps:
+\enumerate{
+\item Validate that \code{met} and group labels are provided.
+\item Compute group-wise methylation summaries (means, variances)
+via \code{calc_met_stats()} if not already present.
+\item Call \code{compute_Stat()} to obtain per-region test
+statistics, p-values and FDR.
+\item Filter out rows with missing FDR, coerce genomic positions
+to integer, and (if any rows remain) write the resulting
+table into the HDF5 file under \code{"/uns/dmrs_results"}.
+\item In addition, \code{compute_Stat()} writes a more complete
+per-region summary table to \code{"/var/stat_results"}.
 }
+
+The function assumes that methylation values in \code{met} are
+stored as proportions in the range \eqn{[0, 1]}.
 }
 \examples{
-output_dir <- tempdir()
-sam_info_df <- data.frame(
-  sample_name = c(
-    'sample_1.bed', 'sample_2.bed',
-    'sample_3.bed', 'sample_4.bed',
-    'sample_5.bed', 'sample_6.bed',
-    'sample_7.bed', 'sample_8.bed'
-  ),
-  group = c(rep('case', 4), rep('ctrl', 4))
-)
-sam_info <- file.path(output_dir, 'sample_info.csv')
-
-input_file_df <- data.frame(
-  marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  ),
-  sample_1.bed = c(100, 200, 600, 900),
-  sample_2.bed = c(100, 200, 600, 900),
-  sample_3.bed = c(100, 200, 600, 900),
-  sample_4.bed = c(100, 200, 600, 900),
-  sample_5.bed = c(800, 900, 100, 50),
-  sample_6.bed = c(800, 900, 100, 50),
-  sample_7.bed = c(800, 900, 100, 50),
-  sample_8.bed = c(800, 900, 100, 50)
-)
-input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
-
-annotation_file_df <- data.frame(
-  chr = rep('chr1', 4),
-  start = c(1000, 2000, 3000, 4000),
-  end = c(2000, 3000, 4000, 5000),
-  SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
-  marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  )
-)
-annotation_file <- file.path(output_dir, 'annotation.bed')
-
-output_file <- 'methylTracer_obj_test.h5'
-
-unlink(file.path(output_dir, output_file),
-  recursive = TRUE
-)
-
-write.csv(sam_info_df, sam_info,
-  row.names = FALSE
-)
-write.table(input_file_df, input_file,
-  sep = '\t', row.names = FALSE
-)
-write.table(annotation_file_df, annotation_file,
-  sep = '\t', row.names = FALSE
-)
-
-build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
-  annotation_file = annotation_file
-)
-
-met_obj <- build_met_obj(
-  file.path(output_dir, output_file),
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
-)
-
-pre_res <- pre_calldmrs(
-  met_obj = met_obj,
-  group_colname = 'group',
-  case_group = 'case',
-  control_group = 'ctrl'
-)
+## Assuming 'met' is a methylTracer object created with build_met_obj()
+## and that 'group' column contains "case" and "ctrl" labels:
+# pre_res <- pre_calldmrs(
+#   met            = met,
+#   group_colname  = "group",
+#   case_group     = "case",
+#   control_group  = "ctrl"
+# )
 }

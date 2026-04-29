@@ -1,672 +1,751 @@
-#' @title QC Metrics for methylTracer Object Methylation Data
+#' @title Compute QC metrics for a methylTracer object
 #'
-#' @description 
-#' This function computes quality control (QC) metrics for methylation 
-#' data stored in an `methylTracer` object. It calculates the number 
-#' of covered CpG sites for each cell, the average methylation level 
-#' per cell, the number of cells covering each CpG site, and the 
-#' average methylation level for each CpG site.
+#' @description
+#' Compute basic quality-control (QC) metrics for methylation data stored
+#' in a \code{methylTracer} object. Metrics are computed both per cell
+#' (column) and per feature/marker (row), and written back into the
+#' underlying HDF5 file.
 #'
-#' @param met_obj A `methylTracer` object containing methylation data. 
-#'                It should have a `seed` slot that contains the data matrix.
-#' @param groupname A character string specifying the group name for 
-#'                  which the QC values are computed. Default is 'X'.
+#' @param met A \code{methylTracer} object containing methylation data,
+#'   backed by an HDF5 file. The path to the file is taken from
+#'   \code{met@seed@filepath}.
+#' @param groupname Character scalar giving the name of the dataset in
+#'   the HDF5 file to use for QC calculation (default: \code{"X"}).
+#'   This should typically be the main methylation matrix, with entries
+#'   stored as proportions in \eqn{[0, 1]} and \code{NA} indicating
+#'   missing/uncovered sites.
 #'
-#' @return This function does not return a value. Instead, it writes 
-#'         the computed QC metrics to the associated HDF5 file.
-#'         The following datasets are created:
-#'         - `obs/coverage_cells`: CpG site coverage per cell.
-#'         - `obs/mean_cell_methylation`: Avg. methylation per cell (‰).
-#'         - `var/coverage_feature`: Cell coverage per CpG site.
-#'         - `var/mean_feature_methylation`: Avg. methylation per CpG site (‰).
+#' @return
+#' This function is called for its side effects and does not return a
+#' value. It writes the following one-dimensional datasets into the
+#' HDF5 file:
+#' \itemize{
+#'   \item \code{obs/coverage_cells}: number of covered CpG sites
+#'         (non-\code{NA}) per cell (column).
+#'   \item \code{obs/mean_cell_methylation}: mean methylation proportion
+#'         per cell (0–1, excluding \code{NA}).
+#'   \item \code{var/coverage_feature}: number of cells (columns)
+#'         covering each feature/marker (row).
+#'   \item \code{var/mean_feature_methylation}: mean methylation
+#'         proportion per feature/marker (0–1, excluding \code{NA}).
+#' }
 #'
-#' @details 
-#' The methylation levels are recorded in thousandths (‰) for better 
-#' numerical precision. The function does not return an object but 
-#' updates the corresponding HDF5 datasets.
+#' Existing datasets with the same names are overwritten.
 #'
-#' @importFrom HDF5Array HDF5Array writeHDF5Array
-#' @import DelayedMatrixStats
-#' @import rhdf5
+#' @details
+#' Methylation values in \code{groupname} are assumed to be stored as
+#' numeric proportions (0–1). Coverage is defined as the number of
+#' non-\code{NA} entries. Means are computed with \code{na.rm = TRUE}.
+#'
+#' @importFrom HDF5Array HDF5Array
+#' @importFrom DelayedMatrixStats colCounts colMeans2 rowCounts rowMeans2
+#' @importFrom rhdf5 h5ls H5Fopen H5Fclose H5Lexists h5delete h5write h5closeAll
 #' @export
+#'
 #' @examples
-#' # example code
+#' \donttest{
 #' output_dir <- tempdir()
 #'
+#' ## sample info
 #' sam_info_df <- data.frame(
-#'   sample_name = c(
-#'     'sample_1.bed', 'sample_2.bed',
-#'     'sample_3.bed', 'sample_4.bed',
-#'     'sample_5.bed', 'sample_6.bed',
-#'     'sample_7.bed', 'sample_8.bed'
-#'   ),
-#'   group = c(rep('case', 4), rep('ctrl', 4))
+#'   sample_name = paste0("sample_", 1:8),
+#'   group       = c(rep("case", 4), rep("ctrl", 4)),
+#'   stringsAsFactors = FALSE
 #' )
-#' sam_info <- file.path(output_dir, 'sample_info.csv')
+#' sam_info <- file.path(output_dir, "sample_info.csv")
 #'
+#' ## toy methylation matrix (proportions 0–1)
 #' input_file_df <- data.frame(
 #'   marker_name = c(
-#'     'chr1_1000_2000', 'chr1_2000_3000',
-#'     'chr1_3000_4000', 'chr1_4000_5000'
+#'     "chr1_1000_2000", "chr1_2000_3000",
+#'     "chr1_3000_4000", "chr1_4000_5000"
 #'   ),
-#'   sample_1.bed = c(100, 200, 600, 900),
-#'   sample_2.bed = c(100, 200, 600, 900),
-#'   sample_3.bed = c(100, 200, 600, 900),
-#'   sample_4.bed = c(100, 200, 600, 900),
-#'   sample_5.bed = c(800, 900, 100, 50),
-#'   sample_6.bed = c(800, 900, 100, 50),
-#'   sample_7.bed = c(800, 900, 100, 50),
-#'   sample_8.bed = c(800, 900, 100, 50)
+#'   sample_1 = c(0.10, 0.20, 0.60, 0.90),
+#'   sample_2 = c(0.10, 0.20, 0.60, 0.90),
+#'   sample_3 = c(0.10, 0.20, 0.60, 0.90),
+#'   sample_4 = c(0.10, 0.20, 0.60, 0.90),
+#'   sample_5 = c(0.80, 0.90, 0.10, 0.05),
+#'   sample_6 = c(0.80, 0.90, 0.10, 0.05),
+#'   sample_7 = c(0.80, 0.90, 0.10, 0.05),
+#'   sample_8 = c(0.80, 0.90, 0.10, 0.05)
 #' )
-#' input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+#' input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 #'
 #' annotation_file_df <- data.frame(
-#'   chr = rep('chr1', 4),
-#'   start = c(1000, 2000, 3000, 4000),
-#'   end = c(2000, 3000, 4000, 5000),
-#'   SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
+#'   chr         = rep("chr1", 4),
+#'   start       = c(1000L, 2000L, 3000L, 4000L),
+#'   end         = c(2000L, 3000L, 4000L, 5000L),
+#'   SYMBOL      = c("gene1", "gene2", "gene3", "gene4"),
 #'   marker_name = c(
-#'     'chr1_1000_2000', 'chr1_2000_3000',
-#'     'chr1_3000_4000', 'chr1_4000_5000'
-#'   )
+#'     "chr1_1000_2000", "chr1_2000_3000",
+#'     "chr1_3000_4000", "chr1_4000_5000"
+#'   ),
+#'   stringsAsFactors = FALSE
 #' )
-#' annotation_file <- file.path(output_dir, 'annotation.bed')
+#' annotation_file <- file.path(output_dir, "annotation.bed")
 #'
-#' output_file <- 'methylTracer_obj_test.h5'
+#' output_file <- "methylTracer_obj_test.h5"
 #'
-#' unlink(file.path(output_dir, output_file),
-#'   recursive = TRUE
-#' )
+#' unlink(file.path(output_dir, output_file), recursive = TRUE)
 #'
-#' write.csv(sam_info_df, sam_info,
-#'   row.names = FALSE
-#' )
+#' write.csv(sam_info_df, sam_info, row.names = FALSE)
 #' write.table(input_file_df, input_file,
-#'   sep = '\t', row.names = FALSE
-#' )
+#'             sep = "\t", row.names = FALSE, quote = FALSE)
 #' write.table(annotation_file_df, annotation_file,
-#'   sep = '\t', row.names = FALSE
-#' )
+#'             sep = "\t", row.names = FALSE, quote = FALSE)
 #'
 #' build_h5(
-#'   sam_info = sam_info,
-#'   input_file = input_file,
-#'   output_dir = output_dir,
-#'   output_file = output_file,
+#'   sam_info       = sam_info,
+#'   input_file     = input_file,
+#'   output_dir     = output_dir,
+#'   output_file    = output_file,
 #'   annotation_file = annotation_file
 #' )
 #'
-#' met_obj <- build_met_obj(
+#' met <- build_met_obj(
 #'   file.path(output_dir, output_file),
-#'   sample_name = 'sample_name',
-#'   marker_name = 'marker_name'
+#'   sample_name = "sample_name",
+#'   marker_name = "marker_name"
 #' )
 #'
-#' compute_qc_value(met_obj = met_obj)
-compute_qc_value <- function(met_obj = NULL, groupname = "X") {
-    if (is.null(met_obj)) {
-        message("Invalid met_obj: must be a methyTracer object.")
-    }
-    length1 <- met_obj@seed@dim[1]
-    length2 <- met_obj@seed@dim[2] 
-    if (!groupname %in% rhdf5::h5ls(met_obj@seed@filepath)$name) {
-        message("Invalid groupname: does not exist in the HDF5 file.")
-    }
-    h5f <- HDF5Array(met_obj@seed@filepath, groupname)
-    if (is.null(h5f)) {
-        message("Failed to load HDF5 array: h5f is NULL.")
-    }
-    coverage_cells <- length1 - DelayedMatrixStats::colCounts(h5f, value = NA)
-    hdf5_5mc <- met_obj@seed@filepath
-    loop_write_h5_vec(
-        infile_vec = coverage_cells, 
-        sample_col_name = "coverage_cells", 
-        hdf5_5mc = hdf5_5mc,
-        dataset = "obs/"
-    )
-    message("add obs/coverage_cells")
-    mean_cell_methylation <- DelayedMatrixStats::colMeans2(
-      h5f, na.rm = TRUE)/1000
-    loop_write_h5_vec(
-        infile_vec = mean_cell_methylation, 
-        sample_col_name = "mean_cell_methylation",
-        hdf5_5mc = hdf5_5mc, dataset = "obs/"
-    )
-    message("add obs/mean_cell_methylation")
-    coverage_feature <- length2 - 
-      DelayedMatrixStats::rowCounts(h5f, value = NA)
-    loop_write_h5_vec(
-        infile_vec = coverage_feature, 
-        sample_col_name = "coverage_feature", 
-        hdf5_5mc = hdf5_5mc,
-        dataset = "var/"
-    )
-    message("add var/coverage_feature")
-    mean_feature_methylation <- DelayedMatrixStats::rowMeans2(
-      h5f, na.rm = TRUE)/1000
-    loop_write_h5_vec(
-        infile_vec = mean_feature_methylation, 
-        sample_col_name = "mean_feature_methylation",
-        hdf5_5mc = hdf5_5mc, dataset = "var/"
-    )
-    message("add var/mean_feature_methylation")
+#' compute_qc_value(met = met)
+#' }
+compute_qc_value <- function(met = NULL, groupname = "X") {
+  if (is.null(met)) {
+    stop("Invalid 'met': must be a non-null methylTracer object.")
+  }
+  
+  h5_path <- met@seed@filepath
+  if (!file.exists(h5_path)) {
+    stop("The HDF5 file referenced by 'met' does not exist: ", h5_path)
+  }
+  
+  ## check dataset exists
+  h5_info <- rhdf5::h5ls(h5_path)
+  if (!groupname %in% h5_info$name) {
+    stop("Invalid 'groupname': dataset '", groupname,
+         "' does not exist in the HDF5 file.")
+  }
+  
+  ## main matrix as HDF5Array
+  h5f <- HDF5Array::HDF5Array(h5_path, groupname)
+  if (is.null(h5f)) {
+    stop("Failed to load HDF5Array from dataset '", groupname, "'.")
+  }
+  
+  x_dim <- dim(h5f)
+  n_rows <- x_dim[1]  ## features
+  n_cols <- x_dim[2]  ## cells/samples
+  
+  ## per-cell coverage: #non-NA per column
+  coverage_cells <- n_rows - DelayedMatrixStats::colCounts(h5f, value = NA)
+  loop_write_h5_vec(
+    infile_vec      = coverage_cells,
+    sample_col_name = "coverage_cells",
+    hdf5_5mc        = h5_path,
+    dataset         = "obs/"
+  )
+  message("Added 'obs/coverage_cells'")
+  
+  ## mean cell methylation (0–1)
+  mean_cell_methylation <- DelayedMatrixStats::colMeans2(h5f, na.rm = TRUE)
+  loop_write_h5_vec(
+    infile_vec      = mean_cell_methylation,
+    sample_col_name = "mean_cell_methylation",
+    hdf5_5mc        = h5_path,
+    dataset         = "obs/"
+  )
+  message("Added 'obs/mean_cell_methylation'")
+  
+  ## per-feature coverage: #non-NA per row
+  coverage_feature <- n_cols - DelayedMatrixStats::rowCounts(h5f, value = NA)
+  loop_write_h5_vec(
+    infile_vec      = coverage_feature,
+    sample_col_name = "coverage_feature",
+    hdf5_5mc        = h5_path,
+    dataset         = "var/"
+  )
+  message("Added 'var/coverage_feature'")
+  
+  ## mean feature methylation (0–1)
+  mean_feature_methylation <- DelayedMatrixStats::rowMeans2(h5f, na.rm = TRUE)
+  loop_write_h5_vec(
+    infile_vec      = mean_feature_methylation,
+    sample_col_name = "mean_feature_methylation",
+    hdf5_5mc        = h5_path,
+    dataset         = "var/"
+  )
+  message("Added 'var/mean_feature_methylation'")
+  
+  invisible(NULL)
 }
 
 
-loop_write_h5_vec <- function(infile_vec = NULL, 
-                              sample_col_name = NULL, 
-                              hdf5_5mc = NULL, 
-                              dataset = NULL) {
-    ## Validate inputs
-    if (is.null(infile_vec) ||
-        !is.numeric(infile_vec)) {
-        message("Infile_vec must be a non-null numeric vector.")
-    }
-    if (is.null(sample_col_name) ||
-        !is.character(sample_col_name)) {
-        message("Sample_col_name must be a non-null character string.")
-    }
-    if (is.null(hdf5_5mc) ||
-        !file.exists(hdf5_5mc)) {
-        message("Hdf5_5mc must be a valid file path.")
-    }
-    if (is.null(dataset) ||
-        !is.character(dataset)) {
-        message("Dataset must be a non-null character string.")
-    }
-
-    ## Process each column
-    current_col_name <- sample_col_name
-    current_dataset <- paste0(dataset, current_col_name)
-
-    ## Read entire column at once and convert to character
-    col_data <- infile_vec
-
-    dataset_name <- current_dataset
-    open_h5 <- rhdf5::H5Fopen(hdf5_5mc)
-    has_dataset <- rhdf5::H5Lexists(open_h5, dataset_name)
-    rhdf5::H5Fclose(open_h5)
-
-    ## Delete if exists
-    if (has_dataset) {
-        rhdf5::h5delete(hdf5_5mc, dataset_name)
-    }
-    rhdf5::h5closeAll()
-    rhdf5::h5write(obj = col_data, file = hdf5_5mc, name = current_dataset)
-
+loop_write_h5_vec <- function(infile_vec      = NULL,
+                              sample_col_name = NULL,
+                              hdf5_5mc        = NULL,
+                              dataset         = NULL) {
+  ## Validate inputs
+  if (is.null(infile_vec) || !is.numeric(infile_vec)) {
+    stop("'infile_vec' must be a non-null numeric vector.")
+  }
+  if (is.null(sample_col_name) || length(sample_col_name) != 1L ||
+      !is.character(sample_col_name)) {
+    stop("'sample_col_name' must be a non-null character scalar.")
+  }
+  if (is.null(hdf5_5mc) || !file.exists(hdf5_5mc)) {
+    stop("'hdf5_5mc' must be a valid HDF5 file path.")
+  }
+  if (is.null(dataset) || length(dataset) != 1L || !is.character(dataset)) {
+    stop("'dataset' must be a non-null character scalar (e.g. 'obs/' or 'var/').")
+  }
+  
+  current_dataset <- paste0(dataset, sample_col_name)
+  
+  ## check if dataset already exists
+  open_h5 <- rhdf5::H5Fopen(hdf5_5mc)
+  has_dataset <- rhdf5::H5Lexists(open_h5, current_dataset)
+  rhdf5::H5Fclose(open_h5)
+  
+  ## delete existing dataset if needed
+  if (has_dataset) {
+    rhdf5::h5delete(hdf5_5mc, current_dataset)
+  }
+  
+  rhdf5::h5closeAll()
+  rhdf5::h5write(obj = infile_vec, file = hdf5_5mc, name = current_dataset)
+  
+  invisible(NULL)
 }
 
 
-#' @title Filter Observations and Variables Based on Cutoff Criteria
+#' Filter cells and features in a methylTracer object
 #'
-#' @description 
-#' This function filters observations and variables in a methylation 
-#' dataset based on specified cutoff values. It retrieves data from 
-#' an HDF5 file and returns a filtered matrix containing only 
-#' observations and variables meeting the criteria.
+#' This function filters cells (columns) and features/markers (rows)
+#' based on QC metrics stored in /obs and /var of a methylTracer object,
+#' and writes the filtered data into a new HDF5 file. It then rebuilds
+#' a new methylTracer object on top of the filtered file.
 #'
-#' @param met_obj A `methylTracer` object containing methylation data. 
-#'                It should have a `seed` slot containing the data matrix.
-#' @param obs_obj A character string specifying the observation dataset 
-#'                to filter (e.g., 'coverage_cells').
-#' @param var_obj A character string specifying the variable dataset 
-#'                to filter (e.g., 'coverage_feature').
-#' @param obs_cutoff A numeric value for filtering observations. 
-#'                   Only observations with values greater it are retained.
-#' @param var_cutoff A numeric value for filtering variables. 
-#'                   Only variables with values greater the cutoff are retained.
-#' @param sample_name Optional; a character string for sample-based filtering 
-#'                    (not implemented).
-#' @param marker_name Optional; a character string for marker-based filtering 
-#'                    (not implemented).
+#' Typical use:
+#'   - obs_obj = "coverage_cells"
+#'   - var_obj = "coverage_feature"
+#' after running compute_qc_value().
 #'
-#' @return A filtered matrix containing only observations and variables 
-#'         meeting the specified cutoff criteria.
+#' @param met A \code{methylTracer} object.
+#' @param obs_obj Column in \code{metObs(met)} used to filter cells
+#'   (e.g. "coverage_cells").
+#' @param var_obj Column in \code{metVar(met)} used to filter features
+#'   (e.g. "coverage_feature").
+#' @param obs_cutoff Numeric; keep cells with \code{obs_obj >= obs_cutoff}.
+#'   If \code{NULL}, keep all cells.
+#' @param var_cutoff Numeric; keep features with \code{var_obj >= var_cutoff}.
+#'   If \code{NULL}, keep all features.
+#' @param sample_name Name of the dataset under "/obs" that stores
+#'   sample IDs, passed to \code{build_met_obj()}.
+#' @param marker_name Name of the dataset under "/var" that stores
+#'   marker IDs, passed to \code{build_met_obj()}.
+#' @param out_file Optional path to the filtered HDF5 file. If \code{NULL},
+#'   a file named \code{filter_<original>.h5} is created in the same
+#'   directory as the original HDF5.
+#' @param overwrite Logical; overwrite \code{out_file} if it exists.
+#' @param copy_coverage Logical; if TRUE, subset and copy "/uns/coverage"
+#'   when present; otherwise skip it.
+#' @param verbose Logical; print progress messages.
 #'
-#' @importFrom HDF5Array HDF5Array writeHDF5Array
-#' @import DelayedArray
-#' @importFrom methods is
+#' @return A new \code{methylTracer} object built on the filtered file.
 #' @export
-#' @examples
-#' output_dir <- tempdir()
-#' sam_info_df <- data.frame(
-#'   sample_name = c(
-#'     'sample_1.bed', 'sample_2.bed',
-#'     'sample_3.bed', 'sample_4.bed',
-#'     'sample_5.bed', 'sample_6.bed',
-#'     'sample_7.bed', 'sample_8.bed'
-#'   ),
-#'   group = c(rep('case', 4), rep('ctrl', 4))
-#' )
-#' sam_info <- file.path(output_dir, 'sample_info.csv')
-#'
-#' input_file_df <- data.frame(
-#'   marker_name = c(
-#'     'chr1_1000_2000', 'chr1_2000_3000',
-#'     'chr1_3000_4000', 'chr1_4000_5000'
-#'   ),
-#'   sample_1.bed = c(100, 200, 600, 900),
-#'   sample_2.bed = c(100, 200, 600, 900),
-#'   sample_3.bed = c(100, 200, 600, 900),
-#'   sample_4.bed = c(100, 200, 600, 900),
-#'   sample_5.bed = c(800, 900, 100, 50),
-#'   sample_6.bed = c(800, 900, 100, 50),
-#'   sample_7.bed = c(800, 900, 100, 50),
-#'   sample_8.bed = c(800, 900, 100, 50)
-#' )
-#' input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
-#'
-#' annotation_file_df <- data.frame(
-#'   chr = rep('chr1', 4),
-#'   start = c(1000, 2000, 3000, 4000),
-#'   end = c(2000, 3000, 4000, 5000),
-#'   SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
-#'   marker_name = c(
-#'     'chr1_1000_2000', 'chr1_2000_3000',
-#'     'chr1_3000_4000', 'chr1_4000_5000'
-#'   )
-#' )
-#' annotation_file <- file.path(output_dir, 'annotation.bed')
-#'
-#' output_file <- 'methylTracer_obj_test.h5'
-#'
-#' unlink(file.path(output_dir, output_file),
-#'   recursive = TRUE
-#' )
-#'
-#' write.csv(sam_info_df, sam_info,
-#'   row.names = FALSE
-#' )
-#' write.table(input_file_df, input_file,
-#'   sep = '\t', row.names = FALSE
-#' )
-#' write.table(annotation_file_df, annotation_file,
-#'   sep = '\t', row.names = FALSE
-#' )
-#'
-#' build_h5(
-#'   sam_info = sam_info,
-#'   input_file = input_file,
-#'   output_dir = output_dir,
-#'   output_file = output_file,
-#'   annotation_file = annotation_file
-#' )
-#'
-#' met_obj <- build_met_obj(
-#'   file.path(output_dir, output_file),
-#'   sample_name = 'sample_name',
-#'   marker_name = 'marker_name'
-#' )
-#'
-#' compute_qc_value(
-#'   met_obj = met_obj
-#' )
-#'
-#' filter_met_obj <- filter_obs_var(
-#'   met_obj = met_obj,
-#'   obs_cutoff = 0,
-#'   var_cutoff = 0,
-#'   sample_name = 'sample_name',
-#'   marker_name = 'marker_name'
-#' )
 filter_obs_var <- function(
-    met_obj = NULL, obs_obj = "coverage_cells", 
-    var_obj = "coverage_feature", 
-    obs_cutoff = NULL,
-    var_cutoff = NULL, sample_name = NULL, marker_name = NULL
+    met,
+    obs_obj       = "coverage_cells",
+    var_obj       = "coverage_feature",
+    obs_cutoff    = NULL,
+    var_cutoff    = NULL,
+    sample_name   = "sample_name",
+    marker_name   = "marker_name",
+    out_file      = NULL,
+    overwrite     = FALSE,
+    copy_coverage = TRUE,
+    verbose       = TRUE
 ) {
-    fi_ch(met_obj=met_obj, obs_obj=obs_obj, var_obj=var_obj,
-        obs_cutoff=obs_cutoff, var_cutoff=var_cutoff)
-
-    hdf5_5mc <- met_obj@seed@filepath
-    obs_array <- HDF5Array(hdf5_5mc, paste0("obs/", obs_obj))
-    var_array <- HDF5Array(hdf5_5mc, paste0("var/", var_obj))
-    obs_index <- DelayedArray::which(obs_array >= obs_cutoff)
-    var_index <- DelayedArray::which(var_array >= var_cutoff)
-
-    ## Check if indices are valid
-    if (length(obs_index) == 0) {
-        message("No observations meet the cutoff criteria.")
+  ## basic checks
+  if (missing(met) || is.null(met)) {
+    stop("'met' must be a non-null methylTracer object.")
+  }
+  if (!inherits(met, "methylTracer")) {
+    stop("'met' must inherit from class 'methylTracer'.")
+  }
+  
+  h5_path <- met@seed@filepath
+  if (!file.exists(h5_path)) {
+    stop("HDF5 file referenced by 'met' does not exist: ", h5_path)
+  }
+  
+  if (is.null(out_file)) {
+    out_file <- file.path(
+      dirname(h5_path),
+      paste0("filter_", basename(h5_path))
+    )
+  }
+  if (file.exists(out_file)) {
+    if (!isTRUE(overwrite)) {
+      stop(
+        "Output file already exists: ", out_file,
+        ". Set 'overwrite = TRUE' to overwrite."
+      )
+    } else if (verbose) {
+      message("Removing existing file: ", out_file)
+      unlink(out_file)
     }
-
-    X_array <- HDF5Array(hdf5_5mc, "X")
-    filtered_X <- X_array[var_index, obs_index]
-    ## Create a new HDF5 file and save the data
-    filter_file <- paste0("filter_", basename(hdf5_5mc))
-    out_dir <- dirname(hdf5_5mc)
-    out_file <- file.path(out_dir, filter_file)
-    if (file.exists(out_file)) {
-        unlink(out_file)
-    }
-    writeHDF5Array(filtered_X, filepath = out_file, name = "X")
-    h5_structure <- h5ls(hdf5_5mc)
-    if ("uns/coverage" %in% h5_structure$name) {
-        message("Write coverage...")
-        h5createGroup(out_file, "uns")
-        coverage_array <- HDF5Array(hdf5_5mc, "uns/coverage")
-        filtered_coverage <- coverage_array[var_index, obs_index]
-        writeHDF5Array(filtered_coverage, 
-                       filepath = out_file, name = "uns/coverage")
-    }
-
-    me_filter <- fi_lo(met_obj=met_obj, 
-                       hdf5_5mc=hdf5_5mc, out_file=out_file,
-                       sample_name=sample_name,
-                       marker_name=marker_name,
-                       obs_index=obs_index,
-                       var_index=var_index)
-
-    return(me_filter)
+  }
+  
+  ## QC metadata from obs / var
+  obs_df <- metObs(met)
+  var_df <- metVar(met)
+  
+  if (!(obs_obj %in% colnames(obs_df))) {
+    stop("Column '", obs_obj, "' not found in metObs(met). ",
+         "Run 'compute_qc_value()' first or check 'obs_obj'.")
+  }
+  if (!(var_obj %in% colnames(var_df))) {
+    stop("Column '", var_obj, "' not found in metVar(met). ",
+         "Run 'compute_qc_value()' first or check 'var_obj'.")
+  }
+  
+  ## build keep indices
+  # cells
+  if (is.null(obs_cutoff)) {
+    obs_keep <- rep(TRUE, nrow(obs_df))
+  } else {
+    obs_keep <- obs_df[[obs_obj]] >= obs_cutoff
+    obs_keep[is.na(obs_keep)] <- FALSE
+  }
+  obs_index <- which(obs_keep)
+  
+  # features
+  if (is.null(var_cutoff)) {
+    var_keep <- rep(TRUE, nrow(var_df))
+  } else {
+    var_keep <- var_df[[var_obj]] >= var_cutoff
+    var_keep[is.na(var_keep)] <- FALSE
+  }
+  var_index <- which(var_keep)
+  
+  if (length(obs_index) == 0L) {
+    stop("No cells passed the filter (", obs_obj, " >= ", obs_cutoff, ").")
+  }
+  if (length(var_index) == 0L) {
+    stop("No features passed the filter (", var_obj, " >= ", var_cutoff, ").")
+  }
+  
+  if (verbose) {
+    message("Keeping ", length(obs_index), " cells and ",
+            length(var_index), " features.")
+  }
+  
+  ## subset main matrix X
+  if (verbose) message("Filtering dataset 'X' ...")
+  X_in  <- HDF5Array::HDF5Array(h5_path, "X")
+  X_sub <- X_in[var_index, obs_index, drop = FALSE]
+  
+  HDF5Array::writeHDF5Array(
+    X_sub,
+    filepath = out_file,
+    name     = "X"
+  )
+  
+  ## subset /uns/coverage if it exists
+  h5_ls <- rhdf5::h5ls(h5_path, recursive = TRUE)
+  has_coverage <- any(h5_ls$group == "/uns" & h5_ls$name == "coverage")
+  
+  if (copy_coverage && has_coverage) {
+    if (verbose) message("Filtering dataset 'uns/coverage' ...")
+    cov_in  <- HDF5Array::HDF5Array(h5_path, "uns/coverage")
+    cov_sub <- cov_in[var_index, obs_index, drop = FALSE]
+    rhdf5::h5createGroup(out_file, "uns")
+    HDF5Array::writeHDF5Array(
+      cov_sub,
+      filepath = out_file,
+      name     = "uns/coverage"
+    )
+  } else if (copy_coverage && !has_coverage && verbose) {
+    message("No '/uns/coverage' dataset found; skipping coverage copy.")
+  }
+  
+  ## write filtered /obs metadata 
+  if (verbose) message("Writing filtered '/obs' metadata ...")
+  rhdf5::h5createGroup(out_file, "obs")
+  
+  # 1) sample_name
+  sample_vec <- as.vector(met@sample_name[])
+  if (length(sample_vec) != nrow(obs_df)) {
+    stop("Length of met@sample_name (", length(sample_vec),
+         ") does not match nrow(metObs(met)) (", nrow(obs_df), ").")
+  }
+  rhdf5::h5write(
+    obj  = sample_vec[obs_index],
+    file = out_file,
+    name = paste0("obs/", sample_name)
+  )
+  
+  # 2) other qc
+  obs_sub <- obs_df[obs_index, , drop = FALSE]
+  for (nm in colnames(obs_sub)) {
+    if (nm == sample_name) next
+    rhdf5::h5write(
+      obj  = obs_sub[[nm]],
+      file = out_file,
+      name = paste0("obs/", nm)
+    )
+  }
+  
+  ## write filtered /var metadata
+  if (verbose) message("Writing filtered '/var' metadata ...")
+  rhdf5::h5createGroup(out_file, "var")
+  
+  # 1) marker_name: 
+  marker_vec <- as.vector(met@marker_name[])
+  if (length(marker_vec) != nrow(var_df)) {
+    stop("Length of met@marker_name (", length(marker_vec),
+         ") does not match nrow(metVar(met)) (", nrow(var_df), ").")
+  }
+  rhdf5::h5write(
+    obj  = marker_vec[var_index],
+    file = out_file,
+    name = paste0("var/", marker_name)
+  )
+  
+  # 2) 其他 var 列
+  var_sub <- var_df[var_index, , drop = FALSE]
+  for (nm in colnames(var_sub)) {
+    if (nm == marker_name) next
+    rhdf5::h5write(
+      obj  = var_sub[[nm]],
+      file = out_file,
+      name = paste0("var/", nm)
+    )
+  }
+  
+  rhdf5::h5closeAll()
+  
+  ## rebuild methylTracer object
+  if (verbose) message("Rebuilding methylTracer object ...")
+  met_filtered <- build_met_obj(
+    h5_file     = out_file,
+    sample_name = sample_name,
+    marker_name = marker_name
+  )
+  
+  if (is.null(met_filtered) || !inherits(met_filtered, "methylTracer")) {
+    stop("Failed to build methylTracer object from filtered file: ", out_file)
+  }
+  
+  if (verbose) {
+    message("Filtered file created: ", met_filtered@seed@filepath)
+  }
+  
+  met_filtered
 }
 
-## Function to write filtered obs and var data from HDF5Array to a file
-writeHDF5Array_index <- function(
-    infile_array = NULL, outfile_array = NULL, 
-    groupname = NULL, dataset_name = NULL,
-    index = NULL
-) {
-    ## Check if the input array is NULL
-    if (is.null(infile_array)) {
-        message("Infile_array cannot be NULL.")
-    }
-
-    ## Check if the output file is NULL
-    if (is.null(outfile_array)) {
-        message("Outfile_array cannot be NULL.")
-    }
-
-    ## Check if the group name is NULL
-    if (is.null(groupname)) {
-        message("Groupname cannot be NULL.")
-    }
-
-    ## Check if the dataset name is NULL
-    if (is.null(dataset_name)) {
-        message("Dataset_name cannot be NULL.")
-    }
-
-    ## Check if the index is NULL or out of bounds
-    if (is.null(index) ||
-        any(index < 1) ||
-        any(index > length(infile_array))) {
-        message("Index must be a valid range within the infile_array.")
-    }
-
-    writeHDF5Array(infile_array[index], 
-                   outfile_array, 
-                   paste0(groupname, "/", dataset_name))
-}
-
-## filter_obs_var check step-1
-fi_ch <- function(
-    met_obj=met_obj,
-    obs_obj=obs_obj,
-    var_obj=var_obj,
-    obs_cutoff=obs_cutoff,
-    var_cutoff=var_cutoff
-)
-{
-    if (is.null(met_obj)) {
-        message("Met_obj cannot be NULL.")
-    }
-    if (is.null(obs_obj) ||
-        is.null(var_obj)) {
-        message("Obs_obj and var_obj must be provided.")
-    }
-    if (is.null(obs_cutoff) ||
-        is.null(var_cutoff)) {
-        message("Obs_cutoff and var_cutoff must be provided.")
-    }
-}
-## filter obs_vat loop write step-2
-fi_lo <- function(
-    met_obj=met_obj,
-    hdf5_5mc=hdf5_5mc,
-    out_file=out_file,
-    sample_name=sample_name,
-    marker_name=marker_name,
-    obs_index=obs_index,
-    var_index=var_index
-)
-{
-    obs_list <- rhdf5::h5ls(hdf5_5mc, recursive = TRUE)
-    obs_datasets <- obs_list$name[obs_list$group == "/obs" & 
-                                    obs_list$dim == met_obj@seed@dim[2] &
-        !is(obs_list$dclass, "COMPOUND")]
-    h5createGroup(out_file, "obs")
-    total_iterations <- length(obs_datasets)
-    for (i in seq_along(obs_datasets)) {
-        obs_dataset <- obs_datasets[i]
-        writeHDF5Array_index(
-            infile_array = HDF5Array(hdf5_5mc, paste0("obs/", obs_dataset)),
-            outfile_array = out_file, groupname = "obs", 
-            dataset_name = obs_dataset,
-            index = obs_index
-        )
-    }
-    h5createGroup(out_file, "var")
-
-    var_list <- rhdf5::h5ls(hdf5_5mc, recursive = TRUE)
-    var_datasets <- var_list$name[var_list$group == "/var" & 
-                                    var_list$dim == met_obj@seed@dim[1] &
-        !methods::is(var_list$dclass, "COMPOUND")]
-
-    total_iterations <- length(var_datasets)
-    for (i in seq_along(var_datasets)) {
-        var_dataset <- var_datasets[i]
-        writeHDF5Array_index(
-            infile_array = HDF5Array(hdf5_5mc, paste0("var/", var_dataset)),
-            outfile_array = out_file, groupname = "var", 
-            dataset_name = var_dataset,
-            index = var_index
-        )
-    }
-    met_obj_filtered <- build_met_obj(h5_file = out_file, 
-                                      sample_name = sample_name, 
-                                      marker_name = marker_name)
-    message("Filted file: ", met_obj_filtered@seed@filepath)
-    return(met_obj_filtered)
-}
 
 
-#' @title Impute Missing Values in Methylation Data
+#' @title Impute missing values in a methylTracer object
 #'
-#' @description 
-#' This function imputes missing values in a `methylTracer` object 
-#' using the specified method. The imputed values replace missing data 
-#' in the HDF5-stored methylation dataset.
+#' @description
+#' Perform simple per-feature imputation of missing methylation values in
+#' the main matrix \code{"X"} of a \code{methylTracer} object. Missing
+#' entries (\code{NA}) are replaced by the feature-wise mean
+#' methylation, as stored in \code{"/var/mean_feature_methylation"}.
+#' The imputed matrix is written back to a new HDF5 file and a new
+#' \code{methylTracer} object is returned.
 #'
-#' @param met_obj A `methylTracer` object containing methylation data.
-#' @param method The imputation method; options include 'mean' or 'median'. 
-#'               Default is 'mean'.
-#' @param chunk_size The size of data chunks processed at a time. 
-#'                   Default is `1e5`.
-#' @param level The compression level for the HDF5 dataset. Default is `1`.
-#' @param sample_name A character string representing the sample names.
-#' @param marker_name A character string representing the marker names.
+#' @param met A \code{methylTracer} object containing methylation data,
+#'   backed by an HDF5 file (path taken from \code{met@seed@filepath}).
+#' @param method Character scalar specifying the imputation method.
+#'   Currently only \code{"mean"} is supported (default).
+#' @param chunk_size Integer; number of rows to process per chunk when
+#'   reading and writing the matrix \code{"X"} (default: \code{1e5}).
+#' @param level Integer scalar giving the compression level (0–9) for
+#'   the temporary HDF5 dataset used during imputation (default: \code{1}).
+#' @param sample_name Character scalar giving the dataset name in
+#'   \code{"/obs"} that contains sample identifiers; passed to
+#'   \code{\link{build_met_obj}} (default: \code{"sample_name"}).
+#' @param marker_name Character scalar giving the dataset name in
+#'   \code{"/var"} that contains marker identifiers; passed to
+#'   \code{\link{build_met_obj}} (default: \code{"marker_name"}).
 #'
-#' @return A modified `methylTracer` object with imputed values.
+#' @return
+#' A new \code{methylTracer} object whose \code{"X"} matrix has had
+#' missing values imputed. The new object is backed by a new HDF5 file
+#' named \code{"impute_<original.h5>"} stored in the same directory as
+#' the original file. The original file is renamed rather than modified
+#' in place.
 #'
-#' @importFrom rhdf5 h5createFile h5createDataset h5set_extent 
-#'                    h5write h5ls h5read h5delete h5createGroup
-#' @importFrom Rcpp sourceCpp
+#' @details
+#' This function assumes that the main methylation matrix \code{"X"}
+#' stores methylation proportions in the range \eqn{[0, 1]}, with
+#' \code{NA} indicating missing or uncovered sites, and that the
+#' feature-wise mean methylation has been stored in
+#' \code{"/var/mean_feature_methylation"} (for example by
+#' \code{\link{compute_qc_value}}).
+#'
+#' If \code{"/var/mean_feature_methylation"} is not present, it will be
+#' computed automatically by calling \code{\link{compute_qc_value}}.
+#'
+#' Imputation is performed in chunks of \code{chunk_size} rows to avoid
+#' loading the entire matrix into memory. For each chunk, missing values
+#' in a row are replaced by the corresponding entry of
+#' \code{mean_feature_methylation}.
+#'
+#' @importFrom rhdf5 h5createFile h5createDataset h5set_extent
+#'   h5write h5ls h5read h5delete h5closeAll H5Sunlimited
+#' @importFrom HDF5Array HDF5Array writeHDF5Array
 #' @export
+#'
 #' @examples
+#' \donttest{
 #' output_dir <- tempdir()
 #'
 #' sam_info_df <- data.frame(
-#'   sample_name = c(
-#'     'sample_1.bed', 'sample_2.bed',
-#'     'sample_3.bed', 'sample_4.bed',
-#'     'sample_5.bed', 'sample_6.bed',
-#'     'sample_7.bed', 'sample_8.bed'
-#'   ),
-#'   group = c(rep('case', 4), rep('ctrl', 4))
+#'   sample_name = paste0("sample_", 1:8),
+#'   group       = c(rep("case", 4), rep("ctrl", 4)),
+#'   stringsAsFactors = FALSE
 #' )
-#' sam_info <- file.path(output_dir, 'sample_info.csv')
+#' sam_info <- file.path(output_dir, "sample_info.csv")
 #'
+#' ## toy methylation matrix in [0, 1]
 #' input_file_df <- data.frame(
 #'   marker_name = c(
-#'     'chr1_1000_2000', 'chr1_2000_3000',
-#'     'chr1_3000_4000', 'chr1_4000_5000'
+#'     "chr1_1000_2000", "chr1_2000_3000",
+#'     "chr1_3000_4000", "chr1_4000_5000"
 #'   ),
-#'   sample_1.bed = c(100, 200, 600, 900),
-#'   sample_2.bed = c(100, 200, 600, 900),
-#'   sample_3.bed = c(100, 200, 600, 900),
-#'   sample_4.bed = c(100, 200, 600, 900),
-#'   sample_5.bed = c(800, 900, 100, 50),
-#'   sample_6.bed = c(800, 900, 100, 50),
-#'   sample_7.bed = c(800, 900, 100, 50),
-#'   sample_8.bed = c(800, 900, 100, 50)
+#'   sample_1 = c(0.10, 0.20, 0.60, NA   ),
+#'   sample_2 = c(0.10, 0.20, 0.60, 0.90),
+#'   sample_3 = c(0.10, NA,   0.60, 0.90),
+#'   sample_4 = c(0.10, 0.20, 0.60, 0.90),
+#'   sample_5 = c(0.80, 0.90, 0.10, 0.05),
+#'   sample_6 = c(0.80, 0.90, 0.10, 0.05),
+#'   sample_7 = c(0.80, 0.90, 0.10, 0.05),
+#'   sample_8 = c(0.80, 0.90, 0.10, 0.05)
 #' )
-#' input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+#' input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 #'
 #' annotation_file_df <- data.frame(
-#'   chr = rep('chr1', 4),
-#'   start = c(1000, 2000, 3000, 4000),
-#'   end = c(2000, 3000, 4000, 5000),
-#'   SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
+#'   chr         = rep("chr1", 4),
+#'   start       = c(1000L, 2000L, 3000L, 4000L),
+#'   end         = c(2000L, 3000L, 4000L, 5000L),
+#'   SYMBOL      = c("gene1", "gene2", "gene3", "gene4"),
 #'   marker_name = c(
-#'     'chr1_1000_2000', 'chr1_2000_3000',
-#'     'chr1_3000_4000', 'chr1_4000_5000'
-#'   )
+#'     "chr1_1000_2000", "chr1_2000_3000",
+#'     "chr1_3000_4000", "chr1_4000_5000"
+#'   ),
+#'   stringsAsFactors = FALSE
 #' )
-#' annotation_file <- file.path(output_dir, 'annotation.bed')
+#' annotation_file <- file.path(output_dir, "annotation.bed")
 #'
-#' output_file <- 'methylTracer_obj_test.h5'
+#' output_file <- "methylTracer_obj_test.h5"
 #'
-#' unlink(file.path(output_dir, output_file),
-#'   recursive = TRUE
-#' )
-#'
-#' # Write the data to files
-#' write.csv(sam_info_df, sam_info,
-#'   row.names = FALSE
-#' )
+#' unlink(file.path(output_dir, output_file), recursive = TRUE)
+#' write.csv(sam_info_df, sam_info, row.names = FALSE)
 #' write.table(input_file_df, input_file,
-#'   sep = '\t', row.names = FALSE
+#'   sep = "\t", row.names = FALSE, quote = FALSE
 #' )
 #' write.table(annotation_file_df, annotation_file,
-#'   sep = '\t', row.names = FALSE
+#'   sep = "\t", row.names = FALSE, quote = FALSE
 #' )
 #'
 #' build_h5(
-#'   sam_info = sam_info,
-#'   input_file = input_file,
-#'   output_dir = output_dir,
-#'   output_file = output_file,
+#'   sam_info        = sam_info,
+#'   input_file      = input_file,
+#'   output_dir      = output_dir,
+#'   output_file     = output_file,
 #'   annotation_file = annotation_file
 #' )
 #'
-#' met_obj <- build_met_obj(
+#' met <- build_met_obj(
 #'   file.path(output_dir, output_file),
-#'   sample_name = 'sample_name',
-#'   marker_name = 'marker_name'
+#'   sample_name = "sample_name",
+#'   marker_name = "marker_name"
 #' )
 #'
-#' compute_qc_value(
-#'   met_obj = met_obj
+#' ## ensure QC metrics exist (including mean_feature_methylation)
+#' compute_qc_value(met = met)
+#'
+#' ## optionally filter first
+#' filtered_met <- filter_obs_var(
+#'   met         = met,
+#'   obs_cutoff  = 1,
+#'   var_cutoff  = 1,
+#'   sample_name = "sample_name",
+#'   marker_name = "marker_name"
 #' )
 #'
-#' filter_met_obj <- filter_obs_var(
-#'   met_obj = met_obj,
-#'   obs_cutoff = 0,
-#'   var_cutoff = 0,
-#'   sample_name = 'sample_name',
-#'   marker_name = 'marker_name'
+#' ## impute missing values
+#' met_imputed <- impute_met_obj(
+#'   met         = filtered_met,
+#'   method      = "mean",
+#'   sample_name = "sample_name",
+#'   marker_name = "marker_name"
 #' )
-#'
-#' met_obj_qc <- impute_met_obj(
-#'   met_obj = filter_met_obj,
-#'   sample_name = 'sample_name',
-#'   marker_name = 'marker_name'
-#' )
-#'
+#' metX(met)
+#' metX(met_imputed)
+#' }
 impute_met_obj <- function(
-    met_obj = NULL, method = "mean", chunk_size = 1e+05, 
-    level = 1, sample_name = NULL,
-    marker_name = NULL
+    met,
+    method      = "mean",
+    chunk_size  = 1e5,
+    level       = 1,
+    sample_name = "sample_name",
+    marker_name = "marker_name"
 ) {
-    hdf5_5mc <- met_obj@seed@filepath
-    var_list <- rhdf5::h5ls(hdf5_5mc, recursive = TRUE)
-    var_datasets <- var_list$name[var_list$group == "/var" & 
-                                    var_list$dim == met_obj@seed@dim[1] &
-        var_list$dclass != "COMPOUND"]
+  if (is.null(met)) {
+    stop("'met' must be a non-null methylTracer object.")
+  }
+  if (!identical(method, "mean")) {
+    stop("Currently only method = 'mean' is supported.")
+  }
+  
+  hdf5_5mc <- met@seed@filepath
+  if (!file.exists(hdf5_5mc)) {
+    stop("HDF5 file does not exist: ", hdf5_5mc)
+  }
+  
+  ## ensure mean_feature_methylation exists
+  var_list <- rhdf5::h5ls(hdf5_5mc, recursive = TRUE)
+  var_datasets <- var_list$name[
+    var_list$group == "/var" &
+      var_list$dclass != "COMPOUND"
+  ]
+  
+  if (!any(grepl("^mean_feature_methylation$", var_datasets))) {
+    message("'var/mean_feature_methylation' not found, computing QC metrics...")
+    compute_qc_value(met)
+  } else {
+    message("'var/mean_feature_methylation' found, using existing values.")
+  }
+  
+  ## dimensions of X
+  n_rows <- met@seed@dim[1]
+  n_cols <- met@seed@dim[2]
+  
+  ## create temporary HDF5 file to hold imputed X
+  impute_tmp_file <- paste0("tmp_impute_", basename(hdf5_5mc))
+  out_dir         <- dirname(hdf5_5mc)
+  tmp_h5          <- file.path(out_dir, impute_tmp_file)
+  
+  if (file.exists(tmp_h5)) {
+    unlink(tmp_h5)
+  }
+  
+  rhdf5::h5createFile(tmp_h5)
+  met_obj_imputed <- imp_obj(
+    tmp_h5          = tmp_h5,
+    ncols           = n_cols,
+    chunk_size      = chunk_size,
+    level           = level,
+    file_total_rows = n_rows,
+    hdf5_5mc        = hdf5_5mc,
+    out_dir         = out_dir,
+    sample_name     = sample_name,
+    marker_name     = marker_name
+  )
+  
+  met_obj_imputed
+}
 
-    if (!any(grepl("mean_feature_methylation", var_datasets))) {
-        message("mean_feature_methylation not found, computing...")
-        compute_qc_value(met_obj)
-    } else {
-        message("mean_feature_methylation exist")
-    }
-
-    # Create a temporary HDF5 file to store imputation information
-    impute_file <- paste0("tmp_impute_", basename(hdf5_5mc))
-    out_dir <- dirname(hdf5_5mc)
-    tmp_h5 <- file.path(out_dir, impute_file)
-    if (file.exists(tmp_h5)) {
-        unlink(tmp_h5)
+## impute_met_obj step-1: chunk-wise imputation and file rewrite
+imp_obj <- function(
+    tmp_h5,
+    ncols,
+    chunk_size,
+    level,
+    file_total_rows,
+    hdf5_5mc,
+    out_dir,
+    sample_name,
+    marker_name
+) {
+  if (chunk_size <= 0L) {
+    stop("'chunk_size' must be a positive integer.")
+  }
+  
+  row_start    <- 1L
+  current_rows <- 0L
+  
+  ## create extensible dataset "X" in temporary file (double, not integer)
+  rhdf5::h5createDataset(
+    file         = tmp_h5,
+    dataset      = "X",
+    dims         = c(0L, ncols),
+    maxdims      = c(rhdf5::H5Sunlimited(), ncols),
+    chunk        = c(chunk_size, ncols),
+    storage.mode = "double",
+    level        = level
+  )
+  
+  while (row_start <= file_total_rows) {
+    rows_to_read <- min(chunk_size, file_total_rows - row_start + 1L)
+    
+    ## read chunk from original X
+    chunk <- rhdf5::h5read(
+      hdf5_5mc,
+      "X",
+      index = list(
+        row_start:(row_start + rows_to_read - 1L),
+        seq_len(ncols)
+      )
+    )
+    if (nrow(chunk) == 0L) {
+      break
     }
     
-    rownames_all <- met_obj@marker_name
-    file_total_rows <- met_obj@seed@dim[1]
-    ncols <- met_obj@seed@dim[2]
-    if (!file.exists(tmp_h5)) {
-        h5createFile(tmp_h5)
-    }
-    met_obj_imputed <- imp_obj(tmp_h5=tmp_h5, ncols=ncols,
-        chunk_size=chunk_size, level=level,out_dir=out_dir,
-        file_total_rows=file_total_rows, hdf5_5mc=hdf5_5mc,
-        sample_name = sample_name, marker_name = marker_name)
-    return(met_obj_imputed)
-}
-## impute_met_obj step-1
-imp_obj <- function(
-    tmp_h5=tmp_h5, ncols=ncols,
-    chunk_size=chunk_size, level=level,
-    file_total_rows=file_total_rows,
-    hdf5_5mc=hdf5_5mc,out_dir=out_dir,
-    sample_name = sample_name, marker_name = marker_name
-)
-{
-    row_start <- 1
-    h5createDataset(
-        file = tmp_h5, dataset = "X", dims = c(0, ncols),
-        maxdims = c(H5Sunlimited(), ncols),
-        chunk = c(chunk_size, ncols),
-        storage.mode = "integer", level = level
+    ## read corresponding feature means
+    chunk_mean <- rhdf5::h5read(
+      hdf5_5mc,
+      "var/mean_feature_methylation",
+      index = list(row_start:(row_start + rows_to_read - 1L))
     )
-    while (row_start <= file_total_rows) {
-        rows_to_read <- min(chunk_size, file_total_rows - row_start + 1)
-        chunk <- h5read(
-            hdf5_5mc, "X", index = list(
-              row_start:(row_start + rows_to_read - 1), seq_len(ncols))
-        )
-        if (nrow(chunk) == 0)
-            break
-        chunk_mean <- h5read(
-            hdf5_5mc, "var/mean_feature_methylation", 
-            index = list(row_start:(row_start + rows_to_read - 1))
-        )
-        chunk_mean <- round(chunk_mean * 1000, 0)
-        chunk_mean <- as.integer(chunk_mean)
-        chunk_imputed <- fill_missing_with_mean(chunk, chunk_mean)
-        current_rows <- dim(h5read(tmp_h5, "X"))[1]
-        new_rows <- current_rows + nrow(chunk)
-        h5set_extent(file = tmp_h5, dataset = "X", dims = c(new_rows, ncols))
-        rhdf5::h5write(
-            obj = chunk_imputed, file = tmp_h5, name = "X", 
-            index = list((current_rows + 1):new_rows, seq_len(ncols))
-        )
-        row_start <- row_start + rows_to_read
-    }
-    h5delete(hdf5_5mc, "X")
-    tmp_h5_X <- HDF5Array(tmp_h5, "X")
-    writeHDF5Array(tmp_h5_X, hdf5_5mc, "X")
-    unlink(tmp_h5)
-    impute_file <- file.path(out_dir, paste0("impute_", basename(hdf5_5mc)))
-    system(paste0("mv ", hdf5_5mc, " ", impute_file))
-    met_obj_imputed <- build_met_obj(h5_file = impute_file, 
-      sample_name = sample_name, marker_name = marker_name)
-    return(met_obj_imputed)
+    ## chunk_mean is numeric in [0,1]，不再取整
+    chunk_mean <- as.numeric(chunk_mean)
+    
+    ## 使用 C++ 函数填充 NA（注意需要 NumericMatrix 版本，见下文）
+    chunk_imputed <- fill_missing_with_mean(chunk, chunk_mean)
+    
+    ## 扩展临时 X 的维度并写入这个 chunk
+    new_rows <- current_rows + nrow(chunk)
+    rhdf5::h5set_extent(
+      file    = tmp_h5,
+      dataset = "X",
+      dims    = c(new_rows, ncols)
+    )
+    rhdf5::h5write(
+      obj   = chunk_imputed,
+      file  = tmp_h5,
+      name  = "X",
+      index = list((current_rows + 1L):new_rows, seq_len(ncols))
+    )
+    
+    current_rows <- new_rows
+    row_start    <- row_start + rows_to_read
+  }
+  
+  ## 删除原文件中的 X，并用 imputed X 覆盖
+  rhdf5::h5delete(hdf5_5mc, "X")
+  tmp_h5_X <- HDF5Array::HDF5Array(tmp_h5, "X")
+  HDF5Array::writeHDF5Array(tmp_h5_X, hdf5_5mc, "X")
+  unlink(tmp_h5)
+  
+  ## 把原文件整体重命名为 impute_<original.h5>
+  impute_file <- file.path(out_dir, paste0("impute_", basename(hdf5_5mc)))
+  if (!file.rename(hdf5_5mc, impute_file)) {
+    stop("Failed to rename imputed HDF5 file to: ", impute_file)
+  }
+  
+  met_obj_imputed <- build_met_obj(
+    h5_file     = impute_file,
+    sample_name = sample_name,
+    marker_name = marker_name
+  )
+  message("Imputed file: ", met_obj_imputed@seed@filepath)
+  
+  met_obj_imputed
 }

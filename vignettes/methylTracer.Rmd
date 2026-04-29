@@ -7,8 +7,10 @@ author:
     affiliation: "Brain Research Center, Zhongnan Hospital of Wuhan University"
 output:
   BiocStyle::html_document:
+    toc: true
     toc_float: yes
     toc_depth: 3
+    number_sections: true
 package: methylTracer
 vignette: |
   %\VignetteIndexEntry{methylTracer}
@@ -16,7 +18,12 @@ vignette: |
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+
+```{r style, echo = FALSE, results = 'asis', include=FALSE}
+BiocStyle::markdown()
+```
+
+```{r knit-set-up, include = FALSE}
 knitr::opts_chunk$set(
   tidy.opts = list(width.cutoff = 80),
   tidy = FALSE,
@@ -26,587 +33,537 @@ knitr::opts_chunk$set(
 )
 ```
 
-# Introduction
 
+# Introduction 
 <img src="methylTracer.logo.png" width="200" align="right">
 
-*methylTracer* is an [R](http://en.wikipedia.org/wiki/R_%28programming_language%29) 
-package designed to facilitate whole-genome DNA methylation analysis, supporting both 
-bulk and single-cell data. It efficiently processes high-throughput sequencing data 
-from techniques such as [TAPS](https://www.nature.com/articles/s41587-019-0041-2) and 
-WGBS (Whole Genome Bisulfite Sequencing), providing powerful tools for large-scale 
-epigenetic research.
+DNA methylation is a key epigenetic modification involved in gene regulation, development, and disease, and is increasingly profiled at single-cell resolution to resolve cellular heterogeneity that is invisible in bulk measurements. Advances in whole-genome bisulfite sequencing (WGBS) and related chemistries now permit near-base–resolution methylome profiling across most CpG sites in the genome, including low-CpG-density regions. More recently, bisulfite-free methods such as TET-assisted pyridine borane sequencing ([TAPS](https://www.nature.com/articles/s41587-019-0041-2)) and its derivatives have improved sequence quality, mapping rate, and coverage, and have been adapted to single-cell and multi-omic settings. Together with a rapidly expanding repertoire of single-cell methylation and multi-omic protocols, these technologies generate increasingly large and sparse datasets that pose new analytical challenges.
 
-The field of DNA methylation analysis has grown exponentially with the advent of 
-high-throughput sequencing technologies, such as WGBS and TAPS, producing vast amounts 
-of data from both bulk tissues and individual cells. However, many existing tools for 
-methylation analysis are limited in their scalability, memory efficiency, and support 
-for single-cell datasets. *methylTracer* is designed to fill this gap by providing a 
-scalable, efficient, and comprehensive toolset for whole-genome DNA methylation analysis. 
-The integration with Bioconductor allows for seamless workflows, ensuring compatibility 
-with other widely used genomic analysis tools and enabling robust data management for 
-large datasets.
+A wide range of Bioconductor packages has been developed for differential methylation analysis in bulk WGBS data. Packages such as [bsseq](https://www.bioconductor.org/packages/release/bioc/html/bsseq.html) implement smoothing-based strategies on per-CpG data to identify differentially methylated regions (DMRs). Others, including [DSS](https://www.bioconductor.org/packages/release/bioc/html/DSS.html), [dmrseq](https://www.bioconductor.org/packages/release/bioc/html/dmrseq.html), [DMRcate](https://www.bioconductor.org/packages/release/bioc/html/DMRcate.html), and related tools, provide sophisticated statistical frameworks for region-level testing using beta-binomial models, generalized least squares, or kernel smoothing. These methods have become standards for bulk WGBS and array data and are routinely used in studies of differential methylation across tissues, conditions, and disease states. However, they are typically designed for per-CpG count data from bulk samples, assume relatively dense coverage, and often rely on in-memory data structures that become prohibitive when scaling to thousands of single cells or genome-wide single-cell measurements. Recent reviews of computational methods for single-cell methylome analysis have highlighted the need for scalable, sparse-aware representations and region-level modelling tailored to single-cell data characteristics.
 
-## Key Features
+Several gaps therefore remain in the current ecosystem of methylation analysis tools. First, most existing DMR pipelines are optimized for bulk WGBS and do not directly accommodate the extreme sparsity and high cell counts characteristic of single-cell methylation datasets. Second, support for multiple library types—such as WGBS and TAPS, which differ in how methylated and unmethylated reads are encoded—is often ad hoc and requires custom data preprocessing. Third, although region-level approaches have been proposed for bulk data, there is still a need for a unified framework that (i) aggregates per-CpG counts into biologically meaningful genomic tiles or regions, (ii) stores the resulting matrices in an on-disk, scalable format, and (iii) links de-novo DMR discovery to downstream single-cell analyses within the Bioconductor ecosystem.
 
-- **Optimized Storage & Memory Management**: 
+The `methylTracer` R package is designed to address these gaps by providing a tile-based, HDF5-backed workflow for differential methylation analysis in single-cell and large-scale DNA methylation datasets. At its core, `methylTracer` aggregates per-CpG methylation calls into region-level, coverage-weighted methylation values, producing a sample-by-region matrix that can be defined over arbitrary genomic annotations (e.g. fixed tiles, promoters, enhancers). This matrix is then converted into an AnnData-style HDF5 file, from which a lightweight met object is constructed. The met object stores only indices and metadata in memory while streaming methylation values from disk, enabling analyses of datasets that would otherwise exceed memory limits.
 
-*methylTracer* utilizes the [HDF5Array](https://bioconductor.org/packages/release/bioc/html/HDF5Array.html) package to interface with [anndata](https://anndata.readthedocs.io/en/stable/) objects. This enhances memory efficiency and storage management, making it ideal for handling large-scale datasets, especially in the context of whole-genome methylation studies.
+Building on this representation, methylTracer implements a single-cell–oriented analysis pipeline. The `cluster_met_cells()` function applies a standard dimensionality-reduction and clustering workflow (PCA, UMAP, and Leiden) directly on the on-disk methylation matrix, yielding unsupervised groups of cells that can serve as contrasts for differential methylation analysis. Group-wise differences in region-level methylation are first quantified using `pre_calldmrs()`, which performs Welch’s t-tests across tiles given a chosen grouping variable (e.g. experimental condition or Leiden cluster) and stores the resulting statistics back into the HDF5 structure. A subsequent C++-accelerated procedure, `calldmrs_turbo()`, merges neighbouring significant tiles into de-novo DMRs under user-specified criteria on genomic distance, length, CpG count, and proportion of significant tiles, thereby improving computational efficiency and scalability for genome-wide DMR discovery. Finally, the `dmrs_to_sce_memory()` function aggregates methylation values over DMRs and returns a [SingleCellExperiment](https://www.bioconductor.org/packages/release/bioc/html/SingleCellExperiment.html) object whose rows correspond to DMRs and columns to cells, facilitating integration with downstream Bioconductor workflows for visualization, clustering, and functional analysis.
 
-- **Fast DMR Detection**: 
+In this vignette, we pursue the following overarching goals:
+(i) to demonstrate that a region-level, HDF5-backed representation allows efficient analysis of large single-cell methylation datasets derived from diverse library types;
+(ii) to show how methylTracer’s pipeline—from matrix construction to DMR calling—can be used to identify biologically interpretable methylation differences between cell groups; and
+(iii) to illustrate how the resulting DMR-level `SingleCellExperiment` objects can be seamlessly integrated with existing single-cell analysis tools. Practically, the vignette is organized around the main workflow: we first describe the construction of a weighted methylation matrix from per-sample input files using `build_count_matrix`, followed by conversion to an AnnData-style HDF5 file with `build_h5` and creation of the met object via `build_met_obj`. We then apply `cluster_met_cells` to obtain data-driven cell groupings, compute region-wise differential statistics with `pre_calldmrs`, and perform fast de-novo DMR calling using `calldmrs_turbo`. Finally, we export DMR-level methylation values to a `SingleCellExperiment` object using `dmrs_to_sce_memory` and briefly outline typical downstream analyses. Subsequent sections provide advanced usage examples, discuss limitations and future extensions, and summarize the broader implications of this framework for single-cell DNA methylation research.
 
-The package employs [Rcpp](https://cran.r-project.org/web/packages/Rcpp/index.html) for rapid and accurate identification of de novo differentially methylated regions (DMRs). This ensures that users can perform high-speed analysis on large genomic regions while maintaining statistical robustness.
+# Overview of the `methylTracer` workflow
 
-While several other packages in the Bioconductor ecosystem, such as [DSS](https://bioconductor.org/packages/release/bioc/html/DSS.html) and [methylKit](https://bioconductor.org/packages/release/bioc/html/methylKit.html), provide tools for methylation analysis, *methylTracer* distinguishes itself by offering an optimized memory model and high-throughput scalability. Unlike other packages, *methylTracer* integrates seamlessly with single-cell methylation data and supports the latest sequencing technologies, such as TAPS, enabling comprehensive analysis of methylation patterns across various biological conditions.
+The `methylTracer` workflow is organized around a simple but flexible sequence of steps that transform per-sample methylation calls into de-novo differentially methylated regions (DMRs) and a DMR-level single-cell object suitable for downstream analysis. Conceptually, the pipeline can be summarized as follows:
 
-With its advanced computational pipeline, *methylTracer* is a powerful tool for researchers studying DNA methylation at both bulk and single-cell resolution. By leveraging Bioconductor's infrastructure, it ensures reproducibility, scalability, and easy integration with other Bioconductor packages, enhancing its utility for large-scale, high-throughput epigenetic research.
+## Matrix construction (build_count_matrix)
+Per-sample methylation files (e.g. bedGraph files produced by common callers) are processed into region-level weighted methylation proportions and coverage values. For each sample and each genomic region defined in an annotation BED file, `methylTracer` aggregates per-CpG counts into a single methylation estimate in [0,1], alongside total coverage. The output is a pair of plain-text matrices (methylation and coverage) with consistent row and column ordering.
+
+## HDF5 backbone creation (build_h5)
+
+The region-level methylation and coverage matrices, together with sample metadata and genomic annotation, are written into an [AnnData](https://anndata.readthedocs.io/en/stable/) HDF5 file. Methylation values are stored as a dense double-precision dataset named "X", while coverage and auxiliary metadata are stored under hierarchical groups (e.g. "/uns", "/obs", "/var"). This layout allows efficient on-disk storage and streaming access.
+
+## On-disk methylation object (build_met_obj)
+
+The HDF5 file is wrapped into a lightweight `methylTracer` object (hereafter referred to as a met object). The met object inherits from [HDF5Array](https://bioconductor.org/packages/release/bioc/html/HDF5Array.html) and stores only indices and metadata in memory, while all methylation values remain on disk. Accessor functions such as `metX()`, `metObs()`, and `metVar()` provide convenient views of the underlying data.
+
+## Unsupervised clustering (cluster_met_cells)
+
+To define cell groups for differential analysis, `methylTracer` implements an unsupervised clustering pipeline. Starting from the region-level methylation matrix, cluster_met_cells() selects variable features, performs principal component analysis (PCA), computes a low-dimensional embedding (UMAP), and applies k-means and/or Leiden clustering. The resulting cluster labels and coordinates are written back into the HDF5 file under /obs and /uns.
+
+## Per-region differential statistics (pre_calldmrs)
+
+Given a grouping variable (e.g. experimental condition or Leiden cluster), pre_calldmrs() computes region-wise differential methylation statistics between two groups (case vs. control). The function first ensures that group-wise summaries are available and then calls a statistical C++ backend to perform Welch’s t-tests across all regions. The full table of per-region statistics and the filtered set of significant regions are stored in the HDF5 file.
+
+## Fast de-novo DMR calling (calldmrs_turbo)
+
+The calldmrs_turbo() function takes the per-region statistics and merges neighbouring significant regions into DMRs according to user-defined criteria on genomic distance, minimum length, minimum CpG count, and proportion of significant tiles. The core merging logic is implemented in C++ to ensure scalability on genome-wide data. The output is a GRanges object representing DMR coordinates and associated summary statistics.
+
+## Export to SingleCellExperiment (dmrs_to_sce_memory)
+
+Finally, dmrs_to_sce_memory() aggregates region-level methylation values over each DMR for every cell and constructs a SingleCellExperiment object: rows correspond to DMRs, columns to cells, and assays contain DMR-level methylation matrices (e.g. assay "meth"). The rowRanges slot stores DMR coordinates, and colData contains the cell metadata imported from the met object.
 
 
-```{r eval=FALSE}
-#if (!requireNamespace("BiocManager", quietly = TRUE)) {
-#    install.packages("BiocManager")
-#}
-# BiocManager::install(methylTracer)
-# devtools::install_github("zetian-jia/methylTracer")
+In the remainder of this vignette, we follow this pipeline step by step using a small toy dataset. The aim is to provide a concrete, reproducible example that illustrates how `methylTracer` can be used to construct a weighted methylation matrix, build an HDF5-backed met object, cluster cells, call DMRs, and integrate the results into standard single-cell Bioconductor workflows.
+
+# Step 1 - Installation
+
+```{r install-packages-met, eval=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+   install.packages("BiocManager")
+}
+BiocManager::install(methylTracer)
 ```
 
-```{r}
+```{r install-packages-dev, eval=FALSE}
+if (!requireNamespace("devtools", quietly = TRUE)) {
+   install.packages("devtools")
+}
+
+devtools::install_github("zetian-jia/methylTracer")
+```
+
+```{r load_libraries, warning=FALSE, message=FALSE}
 library(methylTracer)
+library(ggplot2)
 ```
 
-# Quickly Start
 
-## Build methylTracer Object
+# Step 2 – Building weighted methylation matrices
 
-Before using *methylTracer* for methylation analysis, you need to prepare 
-your data in an HDF5 file format. The following steps will guide you through 
-the process of building a *methylTracer* object.
 
-**Prepare HDF5 File**:
-   - First, ensure that your methylation data is formatted correctly, 
-     typically in a matrix with rows representing genomic loci and columns 
-     representing samples. The data should be stored in an HDF5 file for 
-     efficient processing.
+## Input requirements and data model
 
-   - The HDF5 format is optimal for handling large-scale data, as it allows 
-     for efficient storage and retrieval. You can use tools like the 
-     `rhdf5` package to create or manipulate HDF5 files in R.
+The build_count_matrix() function is responsible for converting per-sample methylation call files into region-level methylation and coverage matrices. It is intentionally agnostic to the upstream calling tool, provided that the input files conform to a simple tabular format that encodes methylated and unmethylated read counts at each locus.
 
-```{r}
+The function operates on three main inputs:
+
+- Sample information (sam_info)
+  A CSV file containing at least one column named sample_name. Each entry corresponds to a methylation file in the input directory, and the file names must match the values in sample_name (optionally with a uniform extension).
+
+- Per-sample methylation files (input_dir)
+  A directory containing one file per sample. Each file is assumed to be a bedGraph-like table with at least the following columns:
+    - chr – chromosome name (e.g. chr1),
+    - start – 0-based start coordinate,
+    - end – end coordinate,
+    - coverage and/or methylation fields describing methylated and unmethylated read counts at the locus.
+
+  The exact column interpretation can depend on the library type. For example, in a conventional WGBS setting, one may treat the fifth column as the number of methylated reads and the sixth as unmethylated reads, whereas in TAPS-like protocols these roles may be reversed. The lib argument of build_count_matrix() is used to select the appropriate interpretation internally.
+
+- Genomic annotation (annotation_file)
+  A BED file that defines the genomic regions over which methylation should be aggregated. Each row corresponds to a marker (e.g. tile, promoter, enhancer) and typically contains:
+    -  chromosome,
+    -  start,
+    -  end,
+    -  an identifier or gene symbol,
+    -  a unique marker name (e.g. chr1_1000_2000).
+    
+    This annotation can be generated using standard tools such as bedtools makewindows for tiling, or more specialized region sets (e.g. promoters, enhancers, CpG islands).
+
+Given these inputs, build_count_matrix() performs the following operations for each sample:
+
+- Sort and standardize chromosomes, ensuring consistent ordering.
+- Filter loci based on coverage thresholds, discarding sites with insufficient read depth.
+- Remove loci overlapping user-specified excluded regions (e.g. SNP lists, blacklisted regions).
+- Intersect per-locus methylation calls with the annotation BED file to determine which sites belong to which marker.
+- Within each marker and sample, aggregate per-locus counts into coverage-weighted methylation proportions.
+
+Formally, for a given marker $r$ and sample $j$, `methylTracer` computes
+
+$$
+\beta_{rj} = \frac{\sum_{i \in r} \text{meth}_{ij}}{\sum_{i \in r} (\text{meth}_{ij} + \text{unmeth}_{ij})}
+$$
+
+where $\text{meth}_{ij}$ and $\text{unmeth}_{ij}$ denote the methylated and unmethylated read counts at locus $i$ within region $r$ for sample $j$. The denominator is also stored separately as a coverage measure.
+
+The result is a pair of matrices with identical dimensions:
+
+- Methylation matrix: a methylation matrix with entries in [0,1], and
+- Coverage matrix: containing the total counts per region and sample.
+
+Both matrices are written to disk as delimited text files and form the basis for the subsequent HDF5 construction.
+
+## Function interface and side effects
+
+The function signature of build_count_matrix() is:
+
+```{r build_count_mat, eval=FALSE}
+build_count_matrix(
+    sam_info       = NULL,
+    input_dir      = NULL,
+    annotation_file = NULL,
+    output_file    = NULL,
+    lib            = "TAPS",
+    exclude_bed    = NULL
+)
+```
+
+## Toy example: simulating minimal input files
+
+To make the process concrete, we now illustrate how to generate a minimal set of input files for build_count_matrix() using simulated data. In this toy example, we create four synthetic samples with methylation calls on a small set of CpG sites, and define 1 kb tiles as regions.
+
+
+
+```{r simulate_input_files, eval=TRUE, warning=FALSE, message=FALSE}
 output_dir <- tempdir()
 set.seed(2025)
 
+## Basic parameters
+n_case <- 25L
+n_ctrl <- 25L
+n_cpg  <- 50L          
+
+## 1. Sample metadata (sam_info)
 sam_info_df <- data.frame(
-  sample_name = paste0("sample_", 1:50, ".bed"),
-  group = rep(c("case", "ctrl"), each = 25)
+  sample_name = paste0("sample_", 1:(n_case + n_ctrl), ".bed"),
+  group       = rep(c("case", "ctrl"), each = n_case),
+  stringsAsFactors = FALSE
 )
 sam_info <- file.path(output_dir, "sample_info.csv")
 
-start_positions <- sort(sample(1001:2000, 100, replace = FALSE))
-marker_names <- paste0("chr21_", start_positions, "_", start_positions + 1)
+## 2. Marker coordinates and annotation
+# Here we simulate a simple block of CpGs on chr21
+start_positions <- seq(1000, by = 100, length.out = n_cpg)
+marker_names <- paste0("chr21_", start_positions, "_", start_positions + 99)
 
-generate_methylation <- function(high, low) {
-  round(c(
-    runif(30, high[1], high[2]),
-    runif(40, low[1], low[2]),
-    runif(30, high[1], high[2])
-  ))
+annotation_file_df <- data.frame(
+  chr         = "chr21",
+  start       = start_positions,
+  end         = start_positions + 99,
+  SYMBOL      = paste0("gene_", seq_len(n_cpg)),
+  marker_name = marker_names,
+  stringsAsFactors = FALSE
+)
+annotation_file <- file.path(output_dir, "annotation.bed")
+
+## 3. Simulate methylation matrix with a synthetic DMR
+# Structure per sample:
+#   - first 15 CpGs: high methylation
+#   - middle 20 CpGs: DMR block
+#   - last 15 CpGs: high methylation
+#
+# Case group: DMR block has relatively high methylation (0.5–1).
+# Control group: DMR block has lower methylation (0–0.4).
+# All values are kept as 0–1 proportions (rounded to 3 decimals).
+generate_methylation <- function(high, low,
+                                 n_up = 15L,
+                                 n_dmr = 20L,
+                                 n_down = 15L,
+                                 digits = 3L) {
+  stopifnot(n_up + n_dmr + n_down == n_cpg)
+
+  vals <- c(
+    runif(n_up,   high[1], high[2]),  # upstream high methylation
+    runif(n_dmr,  low[1],  low[2]),   # DMR block
+    runif(n_down, high[1], high[2])   # downstream high methylation
+  )
+  round(vals, digits = digits)  
 }
+
+case_mat <- sapply(
+  seq_len(n_case),
+  function(i) generate_methylation(
+    high = c(0.6, 1.0), 
+    low  = c(0.5, 1.0)  
+  )
+)
+
+ctrl_mat <- sapply(
+  seq_len(n_ctrl),
+  function(i) generate_methylation(
+    high = c(0.6, 1.0),   
+    low  = c(0.0, 0.4)    
+  )
+)
+
+colnames(case_mat) <- paste0("sample_", 1:n_case, ".bed")
+colnames(ctrl_mat) <- paste0("sample_", (n_case + 1):(n_case + n_ctrl), ".bed")
 
 input_file_df <- data.frame(
   marker_name = marker_names,
-  cbind(
-    sapply(1:25, function(i) generate_methylation(c(600, 1000), c(500, 1000))),
-    sapply(1:25, function(i) generate_methylation(c(600, 1000), c(0, 400)))
-  )
+  cbind(case_mat, ctrl_mat),
+  check.names = FALSE
 )
-colnames(input_file_df)[-1] <- paste0("sample_", 1:50, ".bed")
 input_file <- file.path(output_dir, "methylTracer_matrix.txt")
 
-annotation_file_df <- data.frame(
-  chr = "chr21",
-  start = start_positions,
-  end = start_positions + 1,
-  SYMBOL = paste0("gene_", 1:100),
-  marker_name = marker_names
-)
-annotation_file <- file.path(output_dir, "annotation.bed")
+## 4. Write input files
 output_file <- "methylTracer_obj_test.h5"
 
 unlink(file.path(output_dir, output_file), recursive = TRUE)
 write.csv(sam_info_df, sam_info, row.names = FALSE)
-write.table(input_file_df, input_file, sep = "\t", row.names = FALSE)
-write.table(annotation_file_df, annotation_file, sep = "\t", row.names = FALSE)
+write.table(input_file_df, input_file, sep = "\t", row.names = FALSE, quote = FALSE)
+write.table(annotation_file_df, annotation_file, sep = "\t", row.names = FALSE, quote = FALSE)
+```
 
+In this example, each synthetic .bedGraph file mimics a CpG-level methylation file with columns:
+
+# Step 3 – Creating an AnnData-style HDF5 backbone with build_h5
+
+Once region-level methylation and coverage matrices have been generated by build_count_matrix(), the next step is to convert these text files into a structured HDF5 container that can be accessed efficiently from R. The build_h5() function implements this step by writing the matrices, region annotation, and sample metadata into an AnnData-like HDF5 file.
+
+```{r build_h5_example, eval=TRUE, warning=FALSE, message=FALSE}
 build_h5(
-  sam_info = sam_info, input_file = input_file,
-  output_dir = output_dir, output_file = output_file,
+  sam_info      = sam_info,
+  input_file    = input_file,
+  output_dir    = output_dir,
+  output_file   = output_file,
   annotation_file = annotation_file
 )
 ```
 
-The first step is to create a *methylTracer* object from your data. This object 
-will be used to store and manipulate your methylation data.
+## HDF5 structure used by `methylTracer`
+
+The HDF5 layout follows a simple, cell-by-feature organization:
+
+- /X
+  A dense double-precision dataset storing the methylation matrix, with rows corresponding to regions (markers) and columns to samples or cells. Entries are weighted methylation values in [0,1].
+
+- /uns/coverage
+  A dataset of the same dimensions as /X, storing total coverage (sum of methylated and unmethylated reads) for each region–sample pair.
+
+- /obs
+  A group storing sample-level (cell-level) metadata as one-dimensional datasets.
+
+- /var
+  A group storing marker-level metadata as one-dimensional datasets, each aligned with rows of /X.
+
+Additional analysis results (e.g. clustering coordinates, DMR statistics) are written into uns or into extra columns under obs/var by other functions in the `methylTracer` workflow. At this stage, however, build_h5() focuses on constructing the minimal backbone required for a met object.
+
+# Step 4 – Constructing an on-disk met object
+
+## Concept: a lightweight interface to a large HDF5 file
+The build_met_obj() function provides a high-level interface to methylTracer’s HDF5 files. Rather than loading the methylation matrix into memory
+
+This design closely mirrors the philosophy of HDF5Array and AnnData: the heavy numeric arrays remain on disk; only small slices are loaded into memory when explicitly requested. As a result, the same workflow can be applied to toy examples and to much larger datasets without changing code, with memory usage primarily determined by the size of the subsets extracted at any given step.
+
+## Creating a met object
+
+Constructing a met object from an existing HDF5 file is straightforward:
+
+```{r build_met_obj_example, eval=TRUE, warning=FALSE}
+met <- build_met_obj(
+  file.path(output_dir, output_file),
+  sample_name = "sample_name", 
+  marker_name = "marker_name"
+)
+met
+```
 
 
-```{r}
-met_obj <- build_met_obj(file.path(output_dir, output_file),
-  sample_name = "sample_name", marker_name = "marker_name"
+## Accessor functions: metX(), metObs(), and metVar()
+
+Methylation matrix: metX()
+```{r metX_example}
+head(metX(met))
+```
+
+Sample metadata: metObs()
+```{r metObs_example}
+obs <- metObs(met)
+head(obs)
+```
+
+Region metadata: metVar()
+
+```{r metVar_example}
+var <- metVar(met)
+head(var)
+```
+
+# Step 5 – Clustering cells
+
+Once the HDF5-backed met object has been constructed, a natural next step is to define groups of cells for differential methylation analysis. While users may rely on experimental factors (e.g. case vs control, treatment vs baseline), `methylTracer` also provides an unsupervised clustering routine via the cluster_met_cells() function, which operates directly on the on-disk methylation matrix.
+
+## Overview of the clustering workflow
+
+The cluster_met_cells() function implements the following sequence:
+
+- Feature selection
+  Compute row-wise variances using DelayedMatrixStats::rowVars on the HDF5-backed matrix X, and select the top_features most variable regions.
+
+- Dimensionality reduction
+  Extract the selected rows into an in-memory matrix (cells in rows, features in columns) and perform principal component analysis (PCA) using stats::prcomp, retaining the first n_pcs principal components.
+
+- k-means clustering
+  Run k-means (stats::kmeans) on the PCA coordinates to obtain n_clusters groups. The resulting labels are stored as character values (e.g. "C1", "C2", …) in the HDF5 file under /obs/<cluster_colname>
+
+- Optional UMAP embedding
+  If run_umap = TRUE, compute a UMAP embedding from the PCA coordinates using uwot::umap. The embedding is stored as a numeric matrix at umap_dataset (default "uns/umap_coords"), with cells in rows and UMAP dimensions as columns.
+  
+- Optional Leiden clustering
+  If run_leiden = TRUE, use the nearest-neighbour information returned by UMAP (ret_nn = TRUE) to build a k-nearest neighbour graph with igraph, and apply Leiden clustering (igraph::cluster_leiden). The Leuven-style cluster labels (e.g. "L1", "L2", …) are written to /obs/<leiden_colname>.
+
+The combination of PCA, k-means, UMAP, and Leiden clustering provides both a low-dimensional visualization and one or more grouping variables that can be used in downstream DMR analysis.
+
+## Function interface
+
+```{r cluster_met_cells_interface, eval=TRUE}
+# met and h5_file were created previously
+clust_res <- cluster_met_cells(
+  met,
+  n_clusters       = 2,
+  top_features     = 10,
+  n_pcs            = 2,
+  run_umap         = TRUE,
+  umap_n_neighbors = 10,
+  umap_min_dist    = 0.01,
+  run_leiden       = TRUE,
+  leiden_resolution = 0.01
+)
+```
+
+In practice, for real datasets one would typically use larger values for top_features and n_pcs, but the small settings above suffice for demonstration. The leiden column produced here can be used directly as the grouping variable when calling pre_calldmrs() in the next step.
+
+```{r viz_pca, fig.width=5.5, fig.height=5}
+clust_res$pca |>
+  ggplot(aes(x = PC1, y = PC2)) +
+  geom_point() +
+  labs(title="PCA of methylation profiles")
+```
+
+```{r viz_umap, fig.width=5.5, fig.height=5}
+clust_res$umap |> 
+  ggplot(aes(x = UMAP1, y = UMAP2)) +
+  geom_jitter() +
+  labs(title="UMAP of methylation profiles")
+```
+
+```{r viz_leiden, fig.width=6, fig.height=5}
+ggplot(
+  data = data.frame(clust_res$umap, leiden = clust_res$leiden),
+  aes(x = UMAP1, y = UMAP2, color = leiden)
+) +
+  geom_point(size = 2) +
+  labs(
+    title = "UMAP embedding with Leiden clustering",
+    x     = "UMAP1",
+    y     = "UMAP2",
+    color = "Leiden"
+  )
+```
+
+# Step 6 – Computing region-level differential statistics
+Having defined cell groups (either via experimental labels such as "case" and "ctrl", or via unsupervised clusters such as "L1" and "L2"), the next goal is to quantify differential methylation for each region in the matrix. The pre_calldmrs() function performs this task.
+
+## Statistical model
+
+At a high level, pre_calldmrs() compares the distribution of methylation values between two groups of cells for each region. Methylation values are treated as continuous proportions in [0,1], and a Welch’s t-test is used to accommodate potential differences in variance between groups.
+
+The calculations are implemented in a C++ backend (compute_Stat), which operates directly on the HDF5-backed matrix for efficiency.
+
+## Example: case–control vs cluster-based contrasts
+
+```{r pre_calldmrs_example, eval=TRUE, warning=FALSE}
+pre_res <- pre_calldmrs(
+  met           = met,
+  group_colname = "group",
+  case_group    = "case",
+  control_group = "ctrl"
+)
+
+head(pre_res)
+```
+
+Alternatively, to perform a data-driven contrast between two Leiden clusters (say "L1" and "L2"), we can set:
+
+```{r pre_calldmrs_leiden_example, eval=TRUE, warning=FALSE}
+pre_res_leiden <- pre_calldmrs(
+  met           = met,
+  group_colname = "leiden",
+  case_group    = "L1",
+  control_group = "L2"
 )
 ```
 
 
-## Call De-novo DMRs
+# Step 7 – Fast de-novo DMR calling
 
-Once the `methylTracer` object has been created, the next step is to call 
-de-novo Differentially Methylated Regions (DMRs). These regions are areas of the 
-genome where significant methylation differences are detected between your samples. 
-Identifying these regions is crucial for understanding epigenetic changes in your 
-biological context.
-
-In this step, we'll use the `calldmrs_turbo` function, which will process 
-your methylation data and return the identified DMRs.
+While pre_calldmrs() produces region-wise statistics, DMRs are typically defined as contiguous genomic segments in which multiple adjacent regions show consistent differential methylation. The calldmrs_turbo() function performs this aggregation using a C++ backend to ensure efficiency.
 
 
-```{r}
-pre_res <- pre_calldmrs(
-  met_obj = met_obj, group_colname = "group",
-  case_group = "case", control_group = "ctrl"
-)
+## Example: calling DMRs on the toy dataset
+
+After running the C++ backend, calldmrs_turbo() renames the region-level mean methylation columns to:
+
+- mean_<case_group>
+
+- mean_<ctrl_group>
+
+and constructs a GRanges object:
+
+```{r calldmrs_example, eval=TRUE, warning=FALSE}
 dmr_res <- calldmrs_turbo(
-  met_obj = met_obj, case_group = "case", ctrl_group = "ctrl"
+  met         = met,
+  case_group  = "case",
+  ctrl_group  = "ctrl"
 )
 
 dmr_res
 ```
 
-## plot dmrs
-```{r}
+
+```{r plot_dmrs_example, eval=TRUE, fig.width=7, fig.height=4}
 plot_dmrs(
-  met_obj = met_obj,
-  pre_calldmrs_res = pre_res,
-  dmrs_gr = dmr_res,
-  region = "chr21:1363-1764",
-  shift_up = 30,
-  shift_down = 30,
-  gene_col = "SYMBOL"
+  met=met,
+  pre_calldmrs_res=pre_res,
+  region="chr21:2599-4499"
 )
 ```
 
-# Step-by-Step Guide
-
-## File Preparation
-
-### metafile
-
-The metafile provides additional metadata about the samples or experimental 
-conditions. It is essential for linking methylation data with specific sample 
-information. The metafile should be a tab-delimited text file containing the 
-following columns:
-
-- **sample_name**: A unique identifier for each sample.
-- **Condition**: The experimental condition or group (e.g., control, treatment).
-- **Sample Type**: Information on whether the sample is from blood, tissue, etc.
-- **Batch Information**: If applicable, the batch or sequencing run for the sample.
-- **Additional Metadata**: Other relevant details, such as age, sex, or disease status.
-
-Ensure that each sample in the metafile corresponds to the methylation data 
-in the input files. This file helps in downstream analysis, such as associating 
-methylation data with clinical outcomes or experimental conditions.
-
-```{r}
-output_dir <- tempdir()
-set.seed(2025)
-
-sam_info_df <- data.frame(
-  sample_name = paste0("sample_", 1:50, ".bed"),
-  group = rep(c("case", "ctrl"), each = 25)
-)
-sam_info <- file.path(output_dir, "sample_info.csv")
-
-head(sam_info_df)
-```
-
-### annotation
-
-The annotation file provides essential information for identifying markers 
-and associating them with specific regions in the genome. It should be in BED 
-format, typically containing the following columns:
-
-- **Chromosome (chr)**
-- **Start position**
-- **End position**
-- **Gene symbol** or other relevant marker information (e.g., SYMBOL)
-- **Marker name** (unique identifier for each region)
-
-We recommend using the [ChIPseeker package](https://github.com/YuLab-SMU/ChIPseeker/tree/devel) 
-for annotation. ChIPseeker helps annotate genomic regions with enriched marks 
-or motifs, making it easier to associate methylation data with specific gene 
-regions.
-
-```{r}
-start_positions <- sort(sample(1001:2000, 100, replace = FALSE))
-marker_names <- paste0("chr21_", start_positions, "_", start_positions + 1)
-
-generate_methylation <- function(high, low) {
-  round(c(
-    runif(30, high[1], high[2]),
-    runif(40, low[1], low[2]),
-    runif(30, high[1], high[2])
-  ))
-}
-
-input_file_df <- data.frame(
-  marker_name = marker_names,
-  cbind(
-    sapply(1:25, function(i) generate_methylation(c(600, 1000), c(500, 1000))),
-    sapply(1:25, function(i) generate_methylation(c(600, 1000), c(0, 400)))
-  )
-)
-colnames(input_file_df)[-1] <- paste0("sample_", 1:50, ".bed")
-input_file <- file.path(output_dir, "methylTracer_matrix.txt")
-
-annotation_file_df <- data.frame(
-  chr = "chr21",
-  start = start_positions,
-  end = start_positions + 1,
-  SYMBOL = paste0("gene_", 1:100),
-  marker_name = marker_names
-)
-annotation_file <- file.path(output_dir, "annotation.bed")
-
-head(annotation_file_df)
-```
+# Step 8 – Aggregating DMR-level methylation and building a `SingleCellExperiment`
 
 
+The final step in the core `methylTracer` workflow is to aggregate methylation values over DMRs for each cell and organize the result into a SingleCellExperiment (SCE) object. This representation is convenient for downstream analyses such as dimensionality reduction, clustering, and differential testing using standard single-cell Bioconductor workflows.
 
+## Example: constructing the DMR-level SingleCellExperiment
 
-### methylation signal
-
-For **WGBS** data:
-- The data should be in BED format with six columns:
-  1. Chromosome
-  2. Start position
-  3. End position
-  4. Methylation signal
-  5. Methylated reads
-  6. Unmethylated reads
-
-For **TAPS** data:
-- The data should also be in BED format with six columns:
-  1. Chromosome
-  2. Start position
-  3. End position
-  4. Methylation signal
-  5. Unmethylated reads
-  6. Methylated reads
-
-*Recommended Tools*
-
-- **MethylDackel**: Use [MethylDackel](https://github.com/dpryan79/MethylDackel/tree/master) 
-  for data processing.
-- **bedtools**: This tool is essential for working with BED files. Refer to the 
-  [bedtools documentation](https://bedtools.readthedocs.io/en/latest/) for further details.
-
-*Output File*
-
-- The final output file will have rows labeled with marker names from the 
-  annotation file.
-- Columns will represent the methylation matrix derived from the BED files.
-
-*Data Format Suggestion*
-
-- Convert methylation data into percentage format (thousandths). This reduces 
-  storage space while maintaining precision.
-  
-*Notes for Consistency*
-
-- Ensure the correct format for data consistency and clarity when labeling 
-  columns and rows.
-
-```{r}
-
-head(input_file_df[, 1:4])
-```
-
-
-
-
-
-
-## Build HDF5
-
-In this step, you need to prepare the input file in HDF5 (.h5) format. 
-HDF5 is a versatile data format commonly used for storing large amounts 
-of data in a structured way. It is particularly useful for handling 
-large methylation datasets, as it allows efficient storage and retrieval 
-of large-scale data. The HDF5 file should contain the following key information:
-
-- **Sample Information**: Metadata related to the samples, such as sample IDs, 
-  experimental conditions, and other relevant details.
-- **Methylation Data**: The actual methylation signal data, which may include 
-  methylated and unmethylated read counts, methylation percentages, or 
-  methylation levels at different genomic regions.
-- **Annotation Data**: The genomic regions or features (e.g., gene names, 
-  CpG islands) associated with the methylation data.
-
-Make sure the HDF5 file is structured properly to ensure compatibility with 
-downstream analysis tools and ease of access to the data.
-```{r}
-ann_df <- file.path(output_dir, "annotation.bed")
-output_file <- "methylTracer_obj_test.h5"
-unlink(file.path(output_dir, output_file), recursive = TRUE)
-write.csv(sam_info_df, sam_info, row.names = FALSE)
-write.table(input_file_df, input_file, sep = "\t", row.names = FALSE)
-write.table(annotation_file_df, annotation_file, sep = "\t", row.names = FALSE)
-
-build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
-  annotation_file = annotation_file
-)
-```
-
-## Build methylTracer Object
-
-In this step, you will build a **methylTracer** object, which is essential 
-for analyzing and visualizing methylation data. The **methylTracer** package 
-provides tools for processing and visualizing DNA methylation data in a 
-structured way. To create a **methylTracer** object, follow these steps:
-
-1. **Load Data**: Import your methylation data (e.g., from an HDF5 file or BED 
-   format) into R using the appropriate functions.
-2. **Prepare Data**: Ensure the data is properly formatted, including 
-   methylation percentages, sample information, and genomic annotations.
-3. **Build Object**: Use the `build_met_obj()` function to create the object. 
-   This function requires the following parameters:
-   - `output_dir`: Path to the directory containing your data.
-   - `output_file`: The specific output file containing methylation data.
-   - `sample_name`: The name of the sample.
-   - `marker_name`: The name of the marker to associate with the data.
-4. **Quality Control**: Perform any necessary quality control checks, such as 
-   removing low-quality regions or normalizing the data.
-
-Once the **methylTracer** object is built, you can use it to explore methylation 
-patterns, visualize methylation distributions, and perform statistical analyses.
-
-```{r}
-met_obj <- build_met_obj(
-  file.path(output_dir, output_file),
-  sample_name = "sample_name",
-  marker_name = "marker_name"
+```{r dmrs_to_sce_memory_example, eval=TRUE, warning=FALSE}
+sce_dmr <- dmrs_to_sce_memory(
+  met        = met,
+  dmrs       = dmr_res,
+  assay_name = "meth",
+  verbose    = FALSE
 )
 
-head(met_obs(met_obj))
+sce_dmr
 ```
 
+At this stage, the user can proceed with familiar single-cell analysis tools.
 
-```{r}
-head(met_var(met_obj))
-```
+# Discussion
 
+The `methylTracer` workflow presented in this vignette illustrates how a region-level, HDF5-backed representation can provide a practical solution to several challenges in single-cell and large-scale DNA methylation analysis. By design, `methylTracer` separates the pipeline into conceptually simple stages: (i) construction of a weighted methylation matrix from per-sample count files, (ii) transformation of this matrix into an AnnData-style HDF5 container, (iii) creation of a lightweight on-disk met object as the primary analysis interface, (iv) unsupervised clustering of cells based on region-level methylation patterns, (v) computation of per-region differential statistics using Welch’s t-tests, (vi) fast de-novo DMR calling via a C++ implementation, and (vii) export of DMR-level methylation values to a `SingleCellExperiment` object. This modular structure makes it straightforward to substitute or extend individual steps while preserving a coherent end-to-end workflow.
 
-## Quality Control
+A central feature of `methylTracer` is the decision to operate at the level of genomic regions or tiles, using coverage-weighted methylation proportions rather than individual CpG sites. For single-cell and sparse bulk datasets, where coverage at any single CpG can be highly variable and often extremely low, aggregation over predefined regions improves stability, reduces noise, and makes it feasible to work with a single matrix that covers large fractions of the genome. The explicit dependence on user-specified annotation (e.g. fixed-width tiles, promoters, enhancers) also offers flexibility: different biological questions can be addressed by choosing appropriate region sets without modifying downstream code.
 
-In this step, you will perform quality control (QC) on the methylation data 
-using the **compute_qc_value()** function. This function calculates various 
-quality control metrics for the **methylTracer** object, such as the overall 
-methylation level, coverage, and the distribution of methylation across 
-genomic regions.
+From a computational perspective, the use of an AnnData-style HDF5 layout and an `HDF5Array`-based met object enables analyses that would be difficult or impossible with purely in-memory representations. The methylation matrix can have dimensions in the hundreds of thousands of regions by thousands or tens of thousands of cells, yet only small subsets need to be loaded at a time. This design is particularly valuable when combining genome-wide coverage with large numbers of cells, or when working on shared compute infrastructure with limited memory per session. The same architecture also underlies the clustering and DMR steps: expensive operations such as variance calculations and group-wise summaries are implemented using delayed matrix operations and C++ backends, while the main R interface remains relatively simple.
 
+The integration of unsupervised clustering and DMR detection in a single framework is another practical advantage. In many single-cell studies, biologically meaningful contrasts (e.g. cell states or subtypes) are not known a priori and must be inferred from the data. By allowing users to base DMR analysis on Leiden clusters or other grouping variables stored in the met object, `methylTracer` supports both hypothesis-driven (case vs control) and data-driven (cluster vs cluster) comparisons with the same infrastructure. The final export of DMR-level methylation into a `SingleCellExperiment` object closes the loop by providing a familiar container for downstream dimensionality reduction, visualization, and integration with other modalities within the Bioconductor ecosystem.
 
+Despite these strengths, several limitations of the current implementation should be acknowledged. First, the statistical framework for DMR calling is deliberately simple: Welch’s t-tests on region-level methylation values followed by a merging procedure based on physical proximity and consistency of effect. This approach is effective and computationally efficient, but it does not explicitly model read counts, coverage variability, or overdispersion in the way that more complex hierarchical or beta–binomial models do. In settings where coverage is highly heterogeneous or where subtle differences must be detected in the presence of strong technical noise, such models may be advantageous. Second, the primary contrast supported by the existing API is between two groups at a time. Although multiple contrasts can be run sequentially, a more general framework that handles multi-level factors, continuous covariates, or repeated measurements within a unified model would be desirable. Third, the `dmrs_to_sce_memory()` function is designed for speed and simplicity rather than strict memory minimization; for extremely large DMR sets and dense region coverage, its strategy of loading all overlapping markers into memory may need to be adapted or applied to subsets.
 
-This function does not return a value. Instead, it writes the computed QC
-metrics to the associated HDF5 file. The following datasets are created:
+There are also conceptual trade-offs associated with the choice of region definition. Fixed-width tiles provide uniform coverage and straightforward interpretation of distances and lengths but may not align optimally with functional elements such as promoters, enhancers, or CpG islands. Conversely, using functionally defined regions can improve interpretability at the cost of more complex coverage patterns and potentially uneven statistical power. In practice, methylTracer’s design allows users to experiment with alternative annotation strategies by simply changing the input BED file and rerunning the early steps of the pipeline; however, systematic comparisons of different region schemes remain an open area for methodological work.
 
-- `obs/coverage_cells`: CpG site coverage per cell/sample.
-- `obs/mean_cell_methylation`: Average methylation per cell/sample..
-- `var/coverage_feature`: Cell coverage per CpG site.
-- `var/mean_feature_methylation`: Average methylation per CpG site.
+These limitations suggest several directions for future development. On the statistical side, one natural extension would be to incorporate models that jointly account for methylation proportions and coverage, possibly within a generalized linear or hierarchical modeling framework, while preserving the on-disk, region-level architecture. Another is to support multi-group comparisons, covariate adjustment, and random effects directly in the DMR pipeline, thereby broadening the range of experimental designs that can be handled within `methylTracer`. On the computational side, further optimizations—such as more extensive use of parallel processing, GPU acceleration, or block-wise algorithms for extremely large HDF5-backed matrices—could improve performance on very large cohorts. From a usability perspective, additional helper functions for visualization (e.g. genomic tracks over DMRs, per-cluster methylation profiles) and for integration with other single-cell modalities (e.g. matching methylation clusters with transcriptomic clusters) would further enhance the package’s practical utility.
 
-Use the following code to compute the QC metrics:
-```{r}
-compute_qc_value(met_obj = met_obj)
-```
+In summary, `methylTracer` provides a coherent, scalable, and flexible framework for tile-based DMR detection in single-cell and large-scale DNA methylation studies. By combining weighted region-level aggregation, HDF5-backed storage, C++-accelerated statistics, and direct interoperability with `SingleCellExperiment`, it offers a practical tool for researchers seeking to explore methylation differences across heterogeneous cell populations. The examples in this vignette demonstrate how the core workflow can be applied to both toy and real datasets; we anticipate that the same principles can be extended and adapted as new technologies and analytical needs continue to emerge in the field of epigenomics.
 
-```{r}
-plot_hist(
-  met_obj = met_obj,
-  slot = "obs/mean_cell_methylation",
-  bins = 50,
-  vline = 0.1
-)
-```
+# reference
 
+1. Geisenberger C, van den Berg J, van Batenburg V, et al. (2025). **Single-cell multi-omic detection of DNA methylation and histone modifications reconstructs the dynamics of epigenomic maintenance.** *Nature Methods* 22(10):2042–2051. [doi:10.1038/s41592-025-02847-4](https://doi.org/10.1038/s41592-025-02847-4)
 
-## Filtering
+2. Ahn J, Heo S, Lee J, Bang D (2021). **Introduction to Single-Cell DNA Methylation Profiling Methods.** *Biomolecules* 11(7):1013. [doi:10.3390/biom11071013](https://doi.org/10.3390/biom11071013)
 
-In this step, you will filter the methylation data to retain only high-quality 
-observations. The **filter_obs_var()** function helps filter out regions 
-with low observation counts or high variability. The function takes the 
-following parameters:
+3. Hansen KD, Langmead B, Irizarry RA (2012). **BSmooth: from whole genome bisulfite sequencing reads to differentially methylated regions.** *Genome Biology* 13(10):R83. [doi:10.1186/gb-2012-13-10-r83](https://doi.org/10.1186/gb-2012-13-10-r83)
 
-- `met_obj`: The methylTracer object created earlier.
-- `obs_cutoff`: The cutoff value for the minimum number of observations 
-  required for a region to be included.
-- `var_cutoff`: The cutoff value for the maximum allowed variability across 
-  observations.
-- `sample_name`: The sample name for the methylation data.
-- `marker_name`: The marker name associated with the data.
+4. Liu Y, Siejka-Zielińska P, Velikova G, Bi Y, Yuan F, Tomkova M, et al. (2019). **Bisulfite-free direct detection of 5-methylcytosine and 5-hydroxymethylcytosine at base resolution.** *Nature Biotechnology* 37(4):424–429. [doi:10.1038/s41587-019-0041-2](https://doi.org/10.1038/s41587-019-0041-2)
 
-Use the following code to filter the methylation data:
+5. Kremer LPM, Navarro-Martín A, Anders S, Martin-Villalba A (2024). **Analyzing single-cell bisulfite sequencing data with MethSCAn.** *Nature Methods* 21(9):1616–1623. [doi:10.1038/s41592-024-02347-x](https://doi.org/10.1038/s41592-024-02347-x)
 
-```{r}
-filter_met_obj <- filter_obs_var(
-  met_obj = met_obj,
-  obs_cutoff = 0,
-  var_cutoff = 0,
-  sample_name = "sample_name",
-  marker_name = "marker_name"
-)
-```
+6. Hansen KD, Timp W, Bravo HC, Sabunciyan S, Langmead B, McDonald OG, et al. (2011). **Increased methylation variation in epigenetic domains across cancer types.** *Nature Genetics* 43(8):768–775. [doi:10.1038/ng.865](https://doi.org/10.1038/ng.865)
 
+7. Schultz MD, Schmitz RJ, Ecker JR (2012). **“Leveling” the playing field for analyses of single-base resolution DNA methylomes.** *Trends in Genetics* 28(12):583–585. [doi:10.1016/j.tig.2012.10.012](https://doi.org/10.1016/j.tig.2012.10.012)
 
-## Mean Imputation
+8. Morgan M, Obenchain V, Hester J, Pagès H (2025). **SummarizedExperiment: A container (S4 class) for matrix-like assays.** R package version 1.40.0. Bioconductor. [doi:10.18129/B9.bioc.SummarizedExperiment](https://doi.org/10.18129/B9.bioc.SummarizedExperiment). Available at: <https://bioconductor.org/packages/SummarizedExperiment>.
 
-In this step, you will perform mean imputation to fill in missing methylation 
-values. The **impute_met_obj()** function imputes missing values by replacing 
-them with the mean methylation value for the corresponding marker. The function 
-takes the following parameters:
+9. Fischer B, Smith M, Pau G (2025). **rhdf5: R Interface to HDF5.** R package version 2.54.0. Bioconductor. [doi:10.18129/B9.bioc.rhdf5](https://doi.org/10.18129/B9.bioc.rhdf5). Available at: <https://bioconductor.org/packages/rhdf5>.
 
-- `met_obj`: The filtered methylTracer object from the previous step.
-- `sample_name`: The sample name associated with the methylation data.
-- `marker_name`: The marker name associated with the methylation data.
+10. Pagès H (2025). **DelayedArray: A unified framework for working transparently with on-disk and in-memory array-like datasets.** R package version 0.36.0. Bioconductor. [doi:10.18129/B9.bioc.DelayedArray](https://doi.org/10.18129/B9.bioc.DelayedArray). Available at: <https://bioconductor.org/packages/DelayedArray>.
 
-Use the following code to perform the imputation:
+11. Hickey P (2025). **DelayedMatrixStats: Functions that apply to rows and columns of `DelayedMatrix` objects.** R package version 1.32.0. Bioconductor. [doi:10.18129/B9.bioc.DelayedMatrixStats](https://doi.org/10.18129/B9.bioc.DelayedMatrixStats). Available at: <https://bioconductor.org/packages/DelayedMatrixStats>.
 
-```{r}
-met_obj_impute <- impute_met_obj(
-  met_obj = filter_met_obj,
-  sample_name = "sample_name",
-  marker_name = "marker_name"
-)
-```
+12. Eddelbuettel D, Francois R, Allaire J, Ushey K, Kou Q, Russell N, Ucar I, Bates D, Chambers J (2025). **Rcpp: Seamless R and C++ Integration.** R package version 1.1.0. [doi:10.32614/CRAN.package.Rcpp](https://doi.org/10.32614/CRAN.package.Rcpp). Available at: <https://CRAN.R-project.org/package=Rcpp>.
 
+13. Eddelbuettel D, François R (2011). **Rcpp: Seamless R and C++ Integration.** *Journal of Statistical Software* 40(8):1–18. [doi:10.18637/jss.v040.i08](https://doi.org/10.18637/jss.v040.i08)
 
-```{r}
-plot_hist(
-  met_obj = met_obj_impute,
-  slot = "obs/mean_cell_methylation",
-  bins = 50,
-  vline = 0.1
-)
-```
+14. Eddelbuettel D (2013). **Seamless R and C++ Integration with Rcpp.** Springer, New York. [doi:10.1007/978-1-4614-6868-4](https://doi.org/10.1007/978-1-4614-6868-4). ISBN 978-1-4614-6867-7.
 
-## Call DMRs
+15. Eddelbuettel D, Balamuta J (2018). **Extending R with C++: A Brief Introduction to Rcpp.** *The American Statistician* 72(1):28–36. [doi:10.1080/00031305.2017.1375990](https://doi.org/10.1080/00031305.2017.1375990)
 
-In this step, you will call differentially methylated regions (DMRs) between 
-two groups (e.g., case and control) using the **calldmrs_turbo()** function. 
-The process involves first preparing the data with **pre_calldmrs()**, and 
-then calling DMRs with the specified parameters.
+16. Amezquita RA, Lun ATL, Becht E, Carey VJ, Carpp LN, Geistlinger L, Marini F, Rue-Albrecht K, Risso D, Soneson C, Waldron L, Pagès H, Smith ML, Huber W, Morgan M, Gottardo R, Hicks SC (2020). **Orchestrating single-cell analysis with Bioconductor.** *Nature Methods* 17:137–145. [doi:10.1038/s41592-019-0654-x](https://doi.org/10.1038/s41592-019-0654-x)
 
-1. **pre_calldmrs()**: This function prepares the data for DMR calling by 
-   grouping samples into case and control categories. The function requires 
-   the following parameters:
-   - `met_obj`: The methylTracer object containing methylation data.
-   - `group_colname`: The column name that indicates the group for each sample.
-   - `case_group`: The label for the case group (e.g., "case").
-   - `control_group`: The label for the control group (e.g., "ctrl").
+# Session Information
 
-   Use the following code to prepare the data:
-
-```{r}
-pre_res <- pre_calldmrs(
-  met_obj = met_obj,
-  group_colname = "group",
-  case_group = "case",
-  control_group = "ctrl"
-)
-dmr_res <- calldmrs_turbo(
-  met_obj = met_obj,
-  p_threshold = 0.05,
-  case_group = "case",
-  ctrl_group = "ctrl"
-)
-```
-
-The output of **calldmrs_turbo()** is a standard **GRanges** object, which 
-contains the genomic coordinates of the differentially methylated regions 
-(DMRs) along with their associated methylation statistics. This format makes 
-it easy to store the results for further analysis or to visualize them.
-
-You can save the **GRanges** object for future use or convert it to other 
-formats (e.g., data frame, bed file) if necessary. Additionally, you can 
-visualize the DMRs using genome browsers or generate plots to better understand 
-the methylation differences between the case and control groups.
-
-For example, you can plot the distribution of DMRs across the genome or 
-visualize their coverage using various plotting functions that accept **GRanges** 
-objects as input.
-
-```{r}
-print(dmr_res)
-```
-
-```{r}
-plot_dmrs(
-  met_obj = met_obj,
-  pre_calldmrs_res = pre_res,
-  dmrs_gr = dmr_res,
-  region = "chr21:1363-1764",
-  shift_up = 30,
-  shift_down = 30,
-  gene_col = "SYMBOL"
-)
-```
-
-## Visualization
-
-The **plot_dens()** function generates a density plot to visualize the distribution 
-of methylation data. It helps in examining the variation in methylation levels 
-across different regions or samples. In this function, the following parameters are used:
-
-- `met_obj`: The methylTracer object containing methylation data.
-- `slot`: Specifies the data slot to use for plotting. In this case, 
-`"obs/coverage_cells"` 
-  indicates the coverage data at the cell level.
-- `vline`: Adds a vertical line at a specified methylation level (e.g., `vline = 3`), 
-  which can be used to highlight a threshold or a specific value in the plot.
-
-Use the following code to create the density plot:
-
-```{r}
-plot_dens(
-  met_obj = met_obj,
-  slot = "obs/mean_cell_methylation",
-  vline = 2.5
-)
-```
-
-```{r}
-plot_dens(
-  met_obj = met_obj,
-  slot = "obs/coverage_cells",
-  vline = 3
-)
-```
-
-
-
-
-```{r}
-plot_scatter(
-  met_obj = met_obj,
-  xcol = "coverage_cells",
-  ycol = "mean_cell_methylation",
-  group_col = "group"
-)
-```
-
-
-
-```{r}
+```{r session_info}
 sessionInfo()
 ```

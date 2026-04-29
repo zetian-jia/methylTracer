@@ -28,8 +28,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // computeStatCpp
-DataFrame computeStatCpp(NumericVector mean_1, NumericVector mean_2, NumericVector var1, NumericVector var2);
-RcppExport SEXP _methylTracer_computeStatCpp(SEXP mean_1SEXP, SEXP mean_2SEXP, SEXP var1SEXP, SEXP var2SEXP) {
+DataFrame computeStatCpp(NumericVector mean_1, NumericVector mean_2, NumericVector var1, NumericVector var2, double nn_1, double nn_2);
+RcppExport SEXP _methylTracer_computeStatCpp(SEXP mean_1SEXP, SEXP mean_2SEXP, SEXP var1SEXP, SEXP var2SEXP, SEXP nn_1SEXP, SEXP nn_2SEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -37,17 +37,19 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type mean_2(mean_2SEXP);
     Rcpp::traits::input_parameter< NumericVector >::type var1(var1SEXP);
     Rcpp::traits::input_parameter< NumericVector >::type var2(var2SEXP);
-    rcpp_result_gen = Rcpp::wrap(computeStatCpp(mean_1, mean_2, var1, var2));
+    Rcpp::traits::input_parameter< double >::type nn_1(nn_1SEXP);
+    Rcpp::traits::input_parameter< double >::type nn_2(nn_2SEXP);
+    rcpp_result_gen = Rcpp::wrap(computeStatCpp(mean_1, mean_2, var1, var2, nn_1, nn_2));
     return rcpp_result_gen;
 END_RCPP
 }
 // fill_missing_with_mean
-IntegerMatrix fill_missing_with_mean(IntegerMatrix chunk, NumericVector chunk_mean);
+NumericMatrix fill_missing_with_mean(NumericMatrix chunk, NumericVector chunk_mean);
 RcppExport SEXP _methylTracer_fill_missing_with_mean(SEXP chunkSEXP, SEXP chunk_meanSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< IntegerMatrix >::type chunk(chunkSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type chunk(chunkSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type chunk_mean(chunk_meanSEXP);
     rcpp_result_gen = Rcpp::wrap(fill_missing_with_mean(chunk, chunk_mean));
     return rcpp_result_gen;
@@ -56,7 +58,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_methylTracer_calldmrs_turbo", (DL_FUNC) &_methylTracer_calldmrs_turbo, 7},
-    {"_methylTracer_computeStatCpp", (DL_FUNC) &_methylTracer_computeStatCpp, 4},
+    {"_methylTracer_computeStatCpp", (DL_FUNC) &_methylTracer_computeStatCpp, 6},
     {"_methylTracer_fill_missing_with_mean", (DL_FUNC) &_methylTracer_fill_missing_with_mean, 2},
     {NULL, NULL, 0}
 };

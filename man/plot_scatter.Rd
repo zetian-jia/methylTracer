@@ -2,110 +2,127 @@
 % Please edit documentation in R/plot_met.R
 \name{plot_scatter}
 \alias{plot_scatter}
-\title{Plot Scatter Plot with Grouping Variable}
+\title{Scatter plot of QC metrics with grouping}
 \usage{
-plot_scatter(met_obj = NULL, xcol = NULL, ycol = NULL, group_col = NULL)
+plot_scatter(met, xcol, ycol, group_col, theme = ggplot2::theme_bw())
 }
 \arguments{
-\item{met_obj}{A methylation object containing the data.}
+\item{met}{A \code{methylTracer} object containing methylation data.
+The path to the HDF5 file is taken from \code{met@seed@filepath}.}
 
-\item{xcol}{The variable to be plotted on the x-axis (e.g.,
-\code{'coverage_cells'}).}
+\item{xcol}{Character scalar giving the name of the dataset under the
+\code{"/obs"} group to use for the x-axis, for example
+\code{"coverage_cells"}.}
 
-\item{ycol}{The variable to be plotted on the y-axis (e.g.,
-\code{'mean_cell_methylation'}).}
+\item{ycol}{Character scalar giving the name of the dataset under the
+\code{"/obs"} group to use for the y-axis, for example
+\code{"mean_cell_methylation"} (typically a methylation proportion
+in \eqn{[0, 1]}).}
 
-\item{group_col}{The variable used for coloring the points (e.g.,
-\code{'group'}).}
+\item{group_col}{Character scalar giving the name of the dataset
+under the \code{"/obs"} group used for colouring points, for
+example \code{"group"}.}
+
+\item{theme}{A \pkg{ggplot2} theme object used to customize the
+appearance of the plot. Default is \code{ggplot2::theme_bw()}.}
 }
 \value{
-A \code{ggplot} object representing the scatter plot.
+A \code{ggplot} object representing the scatter plot, which can be
+further modified or printed.
 }
 \description{
-This function generates a scatter plot from a methylation object,
-with customizable axes and a grouping variable for coloring points.
+Draw a scatter plot of two sample-level QC vectors stored in the
+HDF5 file underlying a \code{methylTracer} object, coloured by a
+grouping variable (e.g. case vs control). A typical use case is
+plotting per-cell coverage versus mean methylation in \eqn{[0, 1]}.
+}
+\details{
+This function assumes that \code{xcol}, \code{ycol} and
+\code{group_col} all reside in the \code{"/obs"} group of the HDF5
+file (i.e. their full paths are \code{"obs/<name>"}). These slots
+are typically created by \code{\link{compute_qc_value}} (for
+\code{xcol} / \code{ycol}) and by the user when building the
+\code{met} object (for \code{group_col}).
+
+By default the y-axis is constrained to \eqn{[0, 1]}, which matches
+the usual range of methylation proportions. If you use a different
+QC variable on the y-axis, you can override the scale, e.g. via
+\code{+ ggplot2::scale_y_continuous()}.
 }
 \examples{
+\donttest{
 output_dir <- tempdir()
 
 sam_info_df <- data.frame(
-  sample_name = c(
-    'sample_1.bed', 'sample_2.bed',
-    'sample_3.bed', 'sample_4.bed',
-    'sample_5.bed', 'sample_6.bed',
-    'sample_7.bed', 'sample_8.bed'
-  ),
-  group = c(rep('case', 4), rep('ctrl', 4))
+  sample_name = paste0("sample_", 1:8),
+  group       = c(rep("case", 4), rep("ctrl", 4)),
+  stringsAsFactors = FALSE
 )
-sam_info <- file.path(output_dir, 'sample_info.csv')
+sam_info <- file.path(output_dir, "sample_info.csv")
 
+## toy methylation matrix in [0, 1]
 input_file_df <- data.frame(
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
   ),
-  sample_1.bed = c(100, 200, 600, 900),
-  sample_2.bed = c(100, 200, 600, 900),
-  sample_3.bed = c(100, 200, 600, 900),
-  sample_4.bed = c(100, 200, 600, 900),
-  sample_5.bed = c(800, 900, 100, 50),
-  sample_6.bed = c(800, 900, 100, 50),
-  sample_7.bed = c(800, 900, 100, 50),
-  sample_8.bed = c(800, 900, 100, 50)
+  sample_1 = c(0.10, 0.20, 0.60, 0.90),
+  sample_2 = c(0.10, 0.20, 0.60, 0.90),
+  sample_3 = c(0.10, 0.20, 0.60, 0.90),
+  sample_4 = c(0.10, 0.20, 0.60, 0.90),
+  sample_5 = c(0.80, 0.90, 0.10, 0.05),
+  sample_6 = c(0.80, 0.90, 0.10, 0.05),
+  sample_7 = c(0.80, 0.90, 0.10, 0.05),
+  sample_8 = c(0.80, 0.90, 0.10, 0.05)
 )
-input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 
 annotation_file_df <- data.frame(
-  chr = rep('chr1', 4),
-  start = c(1000, 2000, 3000, 4000),
-  end = c(2000, 3000, 4000, 5000),
-  SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
+  chr         = rep("chr1", 4),
+  start       = c(1000L, 2000L, 3000L, 4000L),
+  end         = c(2000L, 3000L, 4000L, 5000L),
+  SYMBOL      = c("gene1", "gene2", "gene3", "gene4"),
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  )
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
+  ),
+  stringsAsFactors = FALSE
 )
-annotation_file <- file.path(output_dir, 'annotation.bed')
+annotation_file <- file.path(output_dir, "annotation.bed")
 
-output_file <- 'methylTracer_obj_test.h5'
+output_file <- "methylTracer_obj_test.h5"
 
-unlink(file.path(output_dir, output_file),
-  recursive = TRUE
-)
-
-# Write the data to files
-write.csv(sam_info_df, sam_info,
-  row.names = FALSE
-)
+unlink(file.path(output_dir, output_file), recursive = TRUE)
+write.csv(sam_info_df, sam_info, row.names = FALSE)
 write.table(input_file_df, input_file,
-  sep = '\t', row.names = FALSE
+  sep = "\t", row.names = FALSE, quote = FALSE
 )
 write.table(annotation_file_df, annotation_file,
-  sep = '\t', row.names = FALSE
+  sep = "\t", row.names = FALSE, quote = FALSE
 )
 
 build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
+  sam_info        = sam_info,
+  input_file      = input_file,
+  output_dir      = output_dir,
+  output_file     = output_file,
   annotation_file = annotation_file
 )
 
-met_obj <- build_met_obj(
+met <- build_met_obj(
   file.path(output_dir, output_file),
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 
-compute_qc_value(
-  met_obj = met_obj
-)
+compute_qc_value(met = met)
 
-plot_scatter(
-  met_obj = met_obj,
-  xcol = 'coverage_cells',
-  ycol = 'mean_cell_methylation',
+p <- plot_scatter(
+  met       = met,
+  xcol      = "coverage_cells",
+  ycol      = "mean_cell_methylation",
   group_col = "group"
 )
+p
+}
 }

@@ -2,117 +2,129 @@
 % Please edit documentation in R/plot_met.R
 \name{plot_hist}
 \alias{plot_hist}
-\title{Plot Histogram with Optional Vertical Line}
+\title{Plot histogram of a QC vector from a methylTracer object}
 \usage{
-plot_hist(met_obj = NULL, slot = NULL, bins = 50, vline = NULL)
+plot_hist(
+  met = NULL,
+  slot = NULL,
+  bins = 50,
+  vline = NULL,
+  theme = ggplot2::theme_bw()
+)
 }
 \arguments{
-\item{met_obj}{A \code{methylTracer} object containing methylation data.}
+\item{met}{A \code{methylTracer} object containing methylation data.
+The path to the HDF5 file is taken from \code{met@seed@filepath}.}
 
-\item{slot}{A character string specifying the slot in the object
-from which the data is read. Example: \code{'obs/coverage_cells'}.
-Use \code{methylTracer::compute_qc_values()} to generate slot names.}
+\item{slot}{Character scalar giving the HDF5 dataset path to plot,
+for example \code{"obs/coverage_cells"} or
+\code{"var/coverage_feature"}. Typically these slots are created by
+\code{\link{compute_qc_value}}.}
 
-\item{bins}{Integer specifying the number of bins for the histogram.
-Default is \code{50}.}
+\item{bins}{Integer giving the number of bins for the histogram
+(default: \code{50}).}
 
-\item{vline}{Numeric value specifying the x-position of a vertical line
-on the histogram. Default is \code{NULL} (no vertical line).}
+\item{vline}{Optional numeric scalar giving an \eqn{x}-coordinate at
+which to draw a vertical reference line. If \code{NULL} (default),
+no line is drawn.}
+
+\item{theme}{A \pkg{ggplot2} theme object used to customize the
+appearance of the plot. Default is \code{ggplot2::theme_bw()}.}
 }
 \value{
-A \code{ggplot} object representing the histogram.
+A \code{ggplot} object representing the histogram, which can be
+further modified or printed.
 }
 \description{
-This function generates a histogram from a specified slot in
-the \code{met_obj} object, with options to customize the number of
-bins and add a vertical line at a specified position.
+Draw a histogram for a numeric dataset stored in the HDF5 file
+underlying a \code{methylTracer} object (for example,
+\code{"obs/coverage_cells"} or \code{"var/mean_feature_methylation"}).
+Optionally, add a vertical reference line.
 }
 \details{
-The function reads data from the specified slot in \code{met_obj} and
-generates a histogram using \code{ggplot2}. Optionally, a vertical line
-can be added at the specified position (\code{vline}).
+The function reads the specified dataset from the HDF5 file, coerces
+it to numeric, and builds a \pkg{ggplot2} histogram. The
+\eqn{x}-axis is by default constrained to start at 0 and end slightly
+above the maximum observed value (10\\% padding).
+
+This is mainly intended for visualizing QC metrics such as
+per-cell coverage (\code{"obs/coverage_cells"}) or per-feature
+coverage (\code{"var/coverage_feature"}).
 }
 \examples{
+\donttest{
 output_dir <- tempdir()
 
 sam_info_df <- data.frame(
-  sample_name = c(
-    'sample_1.bed', 'sample_2.bed',
-    'sample_3.bed', 'sample_4.bed',
-    'sample_5.bed', 'sample_6.bed',
-    'sample_7.bed', 'sample_8.bed'
-  ),
-  group = c(rep('case', 4), rep('ctrl', 4))
+  sample_name = paste0("sample_", 1:8),
+  group       = c(rep("case", 4), rep("ctrl", 4)),
+  stringsAsFactors = FALSE
 )
-sam_info <- file.path(output_dir, 'sample_info.csv')
+sam_info <- file.path(output_dir, "sample_info.csv")
 
+## toy methylation matrix in [0, 1]
 input_file_df <- data.frame(
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
   ),
-  sample_1.bed = c(100, 200, 600, 900),
-  sample_2.bed = c(100, 200, 600, 900),
-  sample_3.bed = c(100, 200, 600, 900),
-  sample_4.bed = c(100, 200, 600, 900),
-  sample_5.bed = c(800, 900, 100, 50),
-  sample_6.bed = c(800, 900, 100, 50),
-  sample_7.bed = c(800, 900, 100, 50),
-  sample_8.bed = c(800, 900, 100, 50)
+  sample_1 = c(0.10, 0.20, 0.60, 0.90),
+  sample_2 = c(0.10, 0.20, 0.60, 0.90),
+  sample_3 = c(0.10, 0.20, 0.60, 0.90),
+  sample_4 = c(0.10, 0.20, 0.60, 0.90),
+  sample_5 = c(0.80, 0.90, 0.10, 0.05),
+  sample_6 = c(0.80, 0.90, 0.10, 0.05),
+  sample_7 = c(0.80, 0.90, 0.10, 0.05),
+  sample_8 = c(0.80, 0.90, 0.10, 0.05)
 )
-input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 
 annotation_file_df <- data.frame(
-  chr = rep('chr1', 4),
-  start = c(1000, 2000, 3000, 4000),
-  end = c(2000, 3000, 4000, 5000),
-  SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
+  chr         = rep("chr1", 4),
+  start       = c(1000L, 2000L, 3000L, 4000L),
+  end         = c(2000L, 3000L, 4000L, 5000L),
+  SYMBOL      = c("gene1", "gene2", "gene3", "gene4"),
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  )
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
+  ),
+  stringsAsFactors = FALSE
 )
-annotation_file <- file.path(output_dir, 'annotation.bed')
+annotation_file <- file.path(output_dir, "annotation.bed")
 
-output_file <- 'methylTracer_obj_test.h5'
+output_file <- "methylTracer_obj_test.h5"
 
-unlink(file.path(output_dir, output_file),
-  recursive = TRUE
-)
-
-# Write the data to files
-write.csv(sam_info_df, sam_info,
-  row.names = FALSE
-)
+unlink(file.path(output_dir, output_file), recursive = TRUE)
+write.csv(sam_info_df, sam_info, row.names = FALSE)
 write.table(input_file_df, input_file,
-  sep = '\t', row.names = FALSE
+  sep = "\t", row.names = FALSE, quote = FALSE
 )
 write.table(annotation_file_df, annotation_file,
-  sep = '\t', row.names = FALSE
+  sep = "\t", row.names = FALSE, quote = FALSE
 )
 
 build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
+  sam_info        = sam_info,
+  input_file      = input_file,
+  output_dir      = output_dir,
+  output_file     = output_file,
   annotation_file = annotation_file
 )
 
-met_obj <- build_met_obj(
+met <- build_met_obj(
   file.path(output_dir, output_file),
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 
-compute_qc_value(
-  met_obj = met_obj
-)
+compute_qc_value(met = met)
 
-plot_hist(
-  met_obj = met_obj,
-  slot = 'obs/coverage_cells',
-  bins = 50,
+p <- plot_hist(
+  met   = met,
+  slot  = "obs/coverage_cells",
+  bins  = 50,
   vline = 2
 )
+p
+}
 }

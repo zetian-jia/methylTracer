@@ -2,115 +2,135 @@
 % Please edit documentation in R/plot_met.R
 \name{plot_dens}
 \alias{plot_dens}
-\title{Plot Methylation Data (Density Plot)}
+\title{Plot density of a QC or methylation vector}
 \usage{
-plot_dens(met_obj = NULL, slot = NULL, bw = 0.5, vline = NULL)
+plot_dens(
+  met = NULL,
+  slot = NULL,
+  bw = 0.05,
+  vline = NULL,
+  theme = ggplot2::theme_bw()
+)
 }
 \arguments{
-\item{met_obj}{A methylation object containing the methylation data.
-This object should include an HDF5 file with the relevant data.}
+\item{met}{A \code{methylTracer} object containing methylation data.
+The path to the HDF5 file is taken from \code{met@seed@filepath}.}
 
-\item{slot}{A character string specifying the specific slot in the HDF5
-file to read data from (e.g., 'obs/coverage_cells').
-The slot represents the data of interest for the plot.}
+\item{slot}{Character scalar giving the HDF5 dataset path to plot,
+for example \code{"obs/mean_cell_methylation"} or
+\code{"var/mean_feature_methylation"}. The dataset is expected to
+be numeric (typically methylation proportions in \eqn{[0, 1]} or
+QC-derived summaries).}
 
-\item{bw}{A numeric value specifying the bandwidth for kernel density
-estimation (KDE). Default is 0.5. This controls the smoothness of
-the density plot.}
+\item{bw}{Numeric scalar giving the bandwidth passed to
+\code{ggplot2::geom_density()} (default: \code{0.05}). Smaller
+values give a more wiggly curve, larger values a smoother curve.}
 
-\item{vline}{A numeric value specifying the x-position of a vertical
-line to be drawn on the plot. Default is \code{NULL}, meaning no line
-will be drawn.}
+\item{vline}{Optional numeric scalar giving an \eqn{x}-coordinate at
+which to draw a vertical reference line. If \code{NULL} (default),
+no line is drawn.}
+
+\item{theme}{A \pkg{ggplot2} theme object used to customize the
+appearance of the plot. Default is \code{ggplot2::theme_bw()}.}
 }
 \value{
-A \code{ggplot2} object representing the density plot. Visualizes
-the distribution of the values from the specified \code{slot}.
+A \code{ggplot} object representing the density plot, which can be
+further modified or printed.
 }
 \description{
-This function creates a density plot (using kernel density estimation)
-from methylation data stored in a given slot of the \code{met_obj} object.
-It optionally includes a vertical line at a specified position.
+Draw a kernel density curve for a numeric dataset stored in the HDF5
+file underlying a \code{methylTracer} object (for example,
+\code{"obs/mean_cell_methylation"} or
+\code{"var/mean_feature_methylation"}). This is particularly useful
+for visualizing the distribution of methylation proportions in
+\eqn{[0, 1]}.
+}
+\details{
+This function reads the specified dataset from the HDF5 file,
+coerces it to numeric, and draws a kernel density estimate using
+\code{ggplot2::geom_density()}. By default, the \eqn{x}-axis is
+restricted to \eqn{[0, 1]} to match the usual range of methylation
+proportions.
+
+If you plot a QC vector that is not in \eqn{[0, 1]} (e.g. coverage),
+you may want to override the default \code{scale_x_continuous()} or
+rescale the data beforehand.
 }
 \examples{
+\donttest{
 output_dir <- tempdir()
 
 sam_info_df <- data.frame(
-  sample_name = c(
-    'sample_1.bed', 'sample_2.bed',
-    'sample_3.bed', 'sample_4.bed',
-    'sample_5.bed', 'sample_6.bed',
-    'sample_7.bed', 'sample_8.bed'
-  ),
-  group = c(rep('case', 4), rep('ctrl', 4))
+  sample_name = paste0("sample_", 1:8),
+  group       = c(rep("case", 4), rep("ctrl", 4)),
+  stringsAsFactors = FALSE
 )
-sam_info <- file.path(output_dir, 'sample_info.csv')
+sam_info <- file.path(output_dir, "sample_info.csv")
 
+## toy methylation matrix in [0, 1]
 input_file_df <- data.frame(
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
   ),
-  sample_1.bed = c(100, 200, 600, 900),
-  sample_2.bed = c(100, 200, 600, 900),
-  sample_3.bed = c(100, 200, 600, 900),
-  sample_4.bed = c(100, 200, 600, 900),
-  sample_5.bed = c(800, 900, 100, 50),
-  sample_6.bed = c(800, 900, 100, 50),
-  sample_7.bed = c(800, 900, 100, 50),
-  sample_8.bed = c(800, 900, 100, 50)
+  sample_1 = c(0.10, 0.20, 0.60, 0.90),
+  sample_2 = c(0.10, 0.20, 0.60, 0.90),
+  sample_3 = c(0.10, 0.20, 0.60, 0.90),
+  sample_4 = c(0.10, 0.20, 0.60, 0.90),
+  sample_5 = c(0.80, 0.90, 0.10, 0.05),
+  sample_6 = c(0.80, 0.90, 0.10, 0.05),
+  sample_7 = c(0.80, 0.90, 0.10, 0.05),
+  sample_8 = c(0.80, 0.90, 0.10, 0.05)
 )
-input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 
 annotation_file_df <- data.frame(
-  chr = rep('chr1', 4),
-  start = c(1000, 2000, 3000, 4000),
-  end = c(2000, 3000, 4000, 5000),
-  SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
+  chr         = rep("chr1", 4),
+  start       = c(1000L, 2000L, 3000L, 4000L),
+  end         = c(2000L, 3000L, 4000L, 5000L),
+  SYMBOL      = c("gene1", "gene2", "gene3", "gene4"),
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  )
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
+  ),
+  stringsAsFactors = FALSE
 )
-annotation_file <- file.path(output_dir, 'annotation.bed')
+annotation_file <- file.path(output_dir, "annotation.bed")
 
-output_file <- 'methylTracer_obj_test.h5'
+output_file <- "methylTracer_obj_test.h5"
 
-unlink(file.path(output_dir, output_file),
-  recursive = TRUE
-)
-
-# Write the data to files
-write.csv(sam_info_df, sam_info,
-  row.names = FALSE
-)
+unlink(file.path(output_dir, output_file), recursive = TRUE)
+write.csv(sam_info_df, sam_info, row.names = FALSE)
 write.table(input_file_df, input_file,
-  sep = '\t', row.names = FALSE
+  sep = "\t", row.names = FALSE, quote = FALSE
 )
 write.table(annotation_file_df, annotation_file,
-  sep = '\t', row.names = FALSE
+  sep = "\t", row.names = FALSE, quote = FALSE
 )
 
 build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
+  sam_info        = sam_info,
+  input_file      = input_file,
+  output_dir      = output_dir,
+  output_file     = output_file,
   annotation_file = annotation_file
 )
 
-met_obj <- build_met_obj(
+met <- build_met_obj(
   file.path(output_dir, output_file),
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 
-compute_qc_value(
-  met_obj = met_obj
-)
+compute_qc_value(met = met)
 
-plot_dens(
-  met_obj = met_obj,
-  slot = 'obs/coverage_cells',
-  vline = 2
+## Example: density of per-cell mean methylation in [0, 1]
+p <- plot_dens(
+  met   = met,
+  slot  = "obs/mean_cell_methylation",
+  bw    = 0.05,
+  vline = 0.5
 )
+p
+}
 }

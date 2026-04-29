@@ -2,110 +2,115 @@
 % Please edit documentation in R/met_qc.R
 \name{compute_qc_value}
 \alias{compute_qc_value}
-\title{QC Metrics for methylTracer Object Methylation Data}
+\title{Compute QC metrics for a methylTracer object}
 \usage{
-compute_qc_value(met_obj = NULL, groupname = "X")
+compute_qc_value(met = NULL, groupname = "X")
 }
 \arguments{
-\item{met_obj}{A \code{methylTracer} object containing methylation data.
-It should have a \code{seed} slot that contains the data matrix.}
+\item{met}{A \code{methylTracer} object containing methylation data,
+backed by an HDF5 file. The path to the file is taken from
+\code{met@seed@filepath}.}
 
-\item{groupname}{A character string specifying the group name for
-which the QC values are computed. Default is 'X'.}
+\item{groupname}{Character scalar giving the name of the dataset in
+the HDF5 file to use for QC calculation (default: \code{"X"}).
+This should typically be the main methylation matrix, with entries
+stored as proportions in \eqn{[0, 1]} and \code{NA} indicating
+missing/uncovered sites.}
 }
 \value{
-This function does not return a value. Instead, it writes
-the computed QC metrics to the associated HDF5 file.
-The following datasets are created:
-- \code{obs/coverage_cells}: CpG site coverage per cell.
-- \code{obs/mean_cell_methylation}: Avg. methylation per cell (‰).
-- \code{var/coverage_feature}: Cell coverage per CpG site.
-- \code{var/mean_feature_methylation}: Avg. methylation per CpG site (‰).
+This function is called for its side effects and does not return a
+value. It writes the following one-dimensional datasets into the
+HDF5 file:
+\itemize{
+\item \code{obs/coverage_cells}: number of covered CpG sites
+(non-\code{NA}) per cell (column).
+\item \code{obs/mean_cell_methylation}: mean methylation proportion
+per cell (0–1, excluding \code{NA}).
+\item \code{var/coverage_feature}: number of cells (columns)
+covering each feature/marker (row).
+\item \code{var/mean_feature_methylation}: mean methylation
+proportion per feature/marker (0–1, excluding \code{NA}).
+}
+
+Existing datasets with the same names are overwritten.
 }
 \description{
-This function computes quality control (QC) metrics for methylation
-data stored in an \code{methylTracer} object. It calculates the number
-of covered CpG sites for each cell, the average methylation level
-per cell, the number of cells covering each CpG site, and the
-average methylation level for each CpG site.
+Compute basic quality-control (QC) metrics for methylation data stored
+in a \code{methylTracer} object. Metrics are computed both per cell
+(column) and per feature/marker (row), and written back into the
+underlying HDF5 file.
 }
 \details{
-The methylation levels are recorded in thousandths (‰) for better
-numerical precision. The function does not return an object but
-updates the corresponding HDF5 datasets.
+Methylation values in \code{groupname} are assumed to be stored as
+numeric proportions (0–1). Coverage is defined as the number of
+non-\code{NA} entries. Means are computed with \code{na.rm = TRUE}.
 }
 \examples{
-# example code
+\donttest{
 output_dir <- tempdir()
 
+## sample info
 sam_info_df <- data.frame(
-  sample_name = c(
-    'sample_1.bed', 'sample_2.bed',
-    'sample_3.bed', 'sample_4.bed',
-    'sample_5.bed', 'sample_6.bed',
-    'sample_7.bed', 'sample_8.bed'
-  ),
-  group = c(rep('case', 4), rep('ctrl', 4))
+  sample_name = paste0("sample_", 1:8),
+  group       = c(rep("case", 4), rep("ctrl", 4)),
+  stringsAsFactors = FALSE
 )
-sam_info <- file.path(output_dir, 'sample_info.csv')
+sam_info <- file.path(output_dir, "sample_info.csv")
 
+## toy methylation matrix (proportions 0–1)
 input_file_df <- data.frame(
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
   ),
-  sample_1.bed = c(100, 200, 600, 900),
-  sample_2.bed = c(100, 200, 600, 900),
-  sample_3.bed = c(100, 200, 600, 900),
-  sample_4.bed = c(100, 200, 600, 900),
-  sample_5.bed = c(800, 900, 100, 50),
-  sample_6.bed = c(800, 900, 100, 50),
-  sample_7.bed = c(800, 900, 100, 50),
-  sample_8.bed = c(800, 900, 100, 50)
+  sample_1 = c(0.10, 0.20, 0.60, 0.90),
+  sample_2 = c(0.10, 0.20, 0.60, 0.90),
+  sample_3 = c(0.10, 0.20, 0.60, 0.90),
+  sample_4 = c(0.10, 0.20, 0.60, 0.90),
+  sample_5 = c(0.80, 0.90, 0.10, 0.05),
+  sample_6 = c(0.80, 0.90, 0.10, 0.05),
+  sample_7 = c(0.80, 0.90, 0.10, 0.05),
+  sample_8 = c(0.80, 0.90, 0.10, 0.05)
 )
-input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 
 annotation_file_df <- data.frame(
-  chr = rep('chr1', 4),
-  start = c(1000, 2000, 3000, 4000),
-  end = c(2000, 3000, 4000, 5000),
-  SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
+  chr         = rep("chr1", 4),
+  start       = c(1000L, 2000L, 3000L, 4000L),
+  end         = c(2000L, 3000L, 4000L, 5000L),
+  SYMBOL      = c("gene1", "gene2", "gene3", "gene4"),
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  )
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
+  ),
+  stringsAsFactors = FALSE
 )
-annotation_file <- file.path(output_dir, 'annotation.bed')
+annotation_file <- file.path(output_dir, "annotation.bed")
 
-output_file <- 'methylTracer_obj_test.h5'
+output_file <- "methylTracer_obj_test.h5"
 
-unlink(file.path(output_dir, output_file),
-  recursive = TRUE
-)
+unlink(file.path(output_dir, output_file), recursive = TRUE)
 
-write.csv(sam_info_df, sam_info,
-  row.names = FALSE
-)
+write.csv(sam_info_df, sam_info, row.names = FALSE)
 write.table(input_file_df, input_file,
-  sep = '\t', row.names = FALSE
-)
+            sep = "\t", row.names = FALSE, quote = FALSE)
 write.table(annotation_file_df, annotation_file,
-  sep = '\t', row.names = FALSE
-)
+            sep = "\t", row.names = FALSE, quote = FALSE)
 
 build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
+  sam_info       = sam_info,
+  input_file     = input_file,
+  output_dir     = output_dir,
+  output_file    = output_file,
   annotation_file = annotation_file
 )
 
-met_obj <- build_met_obj(
+met <- build_met_obj(
   file.path(output_dir, output_file),
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 
-compute_qc_value(met_obj = met_obj)
+compute_qc_value(met = met)
+}
 }

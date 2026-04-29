@@ -2,129 +2,155 @@
 % Please edit documentation in R/met_qc.R
 \name{impute_met_obj}
 \alias{impute_met_obj}
-\title{Impute Missing Values in Methylation Data}
+\title{Impute missing values in a methylTracer object}
 \usage{
 impute_met_obj(
-  met_obj = NULL,
+  met,
   method = "mean",
   chunk_size = 1e+05,
   level = 1,
-  sample_name = NULL,
-  marker_name = NULL
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 }
 \arguments{
-\item{met_obj}{A \code{methylTracer} object containing methylation data.}
+\item{met}{A \code{methylTracer} object containing methylation data,
+backed by an HDF5 file (path taken from \code{met@seed@filepath}).}
 
-\item{method}{The imputation method; options include 'mean' or 'median'.
-Default is 'mean'.}
+\item{method}{Character scalar specifying the imputation method.
+Currently only \code{"mean"} is supported (default).}
 
-\item{chunk_size}{The size of data chunks processed at a time.
-Default is \code{1e5}.}
+\item{chunk_size}{Integer; number of rows to process per chunk when
+reading and writing the matrix \code{"X"} (default: \code{1e5}).}
 
-\item{level}{The compression level for the HDF5 dataset. Default is \code{1}.}
+\item{level}{Integer scalar giving the compression level (0–9) for
+the temporary HDF5 dataset used during imputation (default: \code{1}).}
 
-\item{sample_name}{A character string representing the sample names.}
+\item{sample_name}{Character scalar giving the dataset name in
+\code{"/obs"} that contains sample identifiers; passed to
+\code{\link{build_met_obj}} (default: \code{"sample_name"}).}
 
-\item{marker_name}{A character string representing the marker names.}
+\item{marker_name}{Character scalar giving the dataset name in
+\code{"/var"} that contains marker identifiers; passed to
+\code{\link{build_met_obj}} (default: \code{"marker_name"}).}
 }
 \value{
-A modified \code{methylTracer} object with imputed values.
+A new \code{methylTracer} object whose \code{"X"} matrix has had
+missing values imputed. The new object is backed by a new HDF5 file
+named \code{"impute_<original.h5>"} stored in the same directory as
+the original file. The original file is renamed rather than modified
+in place.
 }
 \description{
-This function imputes missing values in a \code{methylTracer} object
-using the specified method. The imputed values replace missing data
-in the HDF5-stored methylation dataset.
+Perform simple per-feature imputation of missing methylation values in
+the main matrix \code{"X"} of a \code{methylTracer} object. Missing
+entries (\code{NA}) are replaced by the feature-wise mean
+methylation, as stored in \code{"/var/mean_feature_methylation"}.
+The imputed matrix is written back to a new HDF5 file and a new
+\code{methylTracer} object is returned.
+}
+\details{
+This function assumes that the main methylation matrix \code{"X"}
+stores methylation proportions in the range \eqn{[0, 1]}, with
+\code{NA} indicating missing or uncovered sites, and that the
+feature-wise mean methylation has been stored in
+\code{"/var/mean_feature_methylation"} (for example by
+\code{\link{compute_qc_value}}).
+
+If \code{"/var/mean_feature_methylation"} is not present, it will be
+computed automatically by calling \code{\link{compute_qc_value}}.
+
+Imputation is performed in chunks of \code{chunk_size} rows to avoid
+loading the entire matrix into memory. For each chunk, missing values
+in a row are replaced by the corresponding entry of
+\code{mean_feature_methylation}.
 }
 \examples{
+\donttest{
 output_dir <- tempdir()
 
 sam_info_df <- data.frame(
-  sample_name = c(
-    'sample_1.bed', 'sample_2.bed',
-    'sample_3.bed', 'sample_4.bed',
-    'sample_5.bed', 'sample_6.bed',
-    'sample_7.bed', 'sample_8.bed'
-  ),
-  group = c(rep('case', 4), rep('ctrl', 4))
+  sample_name = paste0("sample_", 1:8),
+  group       = c(rep("case", 4), rep("ctrl", 4)),
+  stringsAsFactors = FALSE
 )
-sam_info <- file.path(output_dir, 'sample_info.csv')
+sam_info <- file.path(output_dir, "sample_info.csv")
 
+## toy methylation matrix in [0, 1]
 input_file_df <- data.frame(
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
   ),
-  sample_1.bed = c(100, 200, 600, 900),
-  sample_2.bed = c(100, 200, 600, 900),
-  sample_3.bed = c(100, 200, 600, 900),
-  sample_4.bed = c(100, 200, 600, 900),
-  sample_5.bed = c(800, 900, 100, 50),
-  sample_6.bed = c(800, 900, 100, 50),
-  sample_7.bed = c(800, 900, 100, 50),
-  sample_8.bed = c(800, 900, 100, 50)
+  sample_1 = c(0.10, 0.20, 0.60, NA   ),
+  sample_2 = c(0.10, 0.20, 0.60, 0.90),
+  sample_3 = c(0.10, NA,   0.60, 0.90),
+  sample_4 = c(0.10, 0.20, 0.60, 0.90),
+  sample_5 = c(0.80, 0.90, 0.10, 0.05),
+  sample_6 = c(0.80, 0.90, 0.10, 0.05),
+  sample_7 = c(0.80, 0.90, 0.10, 0.05),
+  sample_8 = c(0.80, 0.90, 0.10, 0.05)
 )
-input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 
 annotation_file_df <- data.frame(
-  chr = rep('chr1', 4),
-  start = c(1000, 2000, 3000, 4000),
-  end = c(2000, 3000, 4000, 5000),
-  SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
+  chr         = rep("chr1", 4),
+  start       = c(1000L, 2000L, 3000L, 4000L),
+  end         = c(2000L, 3000L, 4000L, 5000L),
+  SYMBOL      = c("gene1", "gene2", "gene3", "gene4"),
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  )
+    "chr1_1000_2000", "chr1_2000_3000",
+    "chr1_3000_4000", "chr1_4000_5000"
+  ),
+  stringsAsFactors = FALSE
 )
-annotation_file <- file.path(output_dir, 'annotation.bed')
+annotation_file <- file.path(output_dir, "annotation.bed")
 
-output_file <- 'methylTracer_obj_test.h5'
+output_file <- "methylTracer_obj_test.h5"
 
-unlink(file.path(output_dir, output_file),
-  recursive = TRUE
-)
-
-# Write the data to files
-write.csv(sam_info_df, sam_info,
-  row.names = FALSE
-)
+unlink(file.path(output_dir, output_file), recursive = TRUE)
+write.csv(sam_info_df, sam_info, row.names = FALSE)
 write.table(input_file_df, input_file,
-  sep = '\t', row.names = FALSE
+  sep = "\t", row.names = FALSE, quote = FALSE
 )
 write.table(annotation_file_df, annotation_file,
-  sep = '\t', row.names = FALSE
+  sep = "\t", row.names = FALSE, quote = FALSE
 )
 
 build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
+  sam_info        = sam_info,
+  input_file      = input_file,
+  output_dir      = output_dir,
+  output_file     = output_file,
   annotation_file = annotation_file
 )
 
-met_obj <- build_met_obj(
+met <- build_met_obj(
   file.path(output_dir, output_file),
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 
-compute_qc_value(
-  met_obj = met_obj
+## ensure QC metrics exist (including mean_feature_methylation)
+compute_qc_value(met = met)
+
+## optionally filter first
+filtered_met <- filter_obs_var(
+  met         = met,
+  obs_cutoff  = 1,
+  var_cutoff  = 1,
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 
-filter_met_obj <- filter_obs_var(
-  met_obj = met_obj,
-  obs_cutoff = 0,
-  var_cutoff = 0,
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
+## impute missing values
+met_imputed <- impute_met_obj(
+  met         = filtered_met,
+  method      = "mean",
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
-
-met_obj_qc <- impute_met_obj(
-  met_obj = filter_met_obj,
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
-)
-
+metX(met)
+metX(met_imputed)
+}
 }

@@ -5,146 +5,177 @@
 \title{Plot Differentially Methylated Regions (DMRs)}
 \usage{
 plot_dmrs(
-  met_obj = NULL,
-  pre_calldmrs_res = NULL,
-  dmrs_gr = NULL,
-  region = NULL,
-  shift_up = 3,
-  shift_down = 3,
-  gene_col = "V4",
+  met,
+  pre_calldmrs_res,
+  region,
+  shift_up = 3L,
+  shift_down = 3L,
+  gene_col = NULL,
   regul_col = NULL
 )
 }
 \arguments{
-\item{met_obj}{A methylation object containing the data, which should
-be structured with necessary slots for methylation information.}
+\item{met}{A \code{methylTracer} object. The underlying HDF5 file is
+taken from \code{met@seed@filepath}, and marker coordinates are
+parsed from \code{met@marker_name} (format
+\code{"chr_start_end"}).}
 
-\item{pre_calldmrs_res}{Pre-calculated DMRs results for plotting.}
+\item{pre_calldmrs_res}{A data.frame returned by
+\code{\link{pre_calldmrs}}. It must contain at least columns
+\code{chr}, \code{pos} (CpG position), and group-wise mean
+methylation columns whose names start with \code{"mean"} (e.g.
+\code{"mean_case"} / \code{"mean_ctrl"}) in \eqn{[0, 1]}.}
 
-\item{dmrs_gr}{GenomicRanges object containing the DMRs.}
+\item{region}{Character scalar specifying the genomic interval to
+plot, in the form \code{"chr:start-end"}, e.g.
+\code{"chr1:1000-5000"}. \code{start} and \code{end} should match
+values in \code{calldmrs_turbo}.}
 
-\item{region}{A string specifying the genomic region to plot (e.g.,
-"chr1:1000-5000").}
+\item{shift_up}{Integer, how many CpG indices upstream of
+\code{start} to include for context (default \code{3}).}
 
-\item{shift_up}{The number of units to shift the region upward for better
-visualization. Default is 3.}
+\item{shift_down}{Integer, how many CpG indices downstream of
+\code{end} to include for context (default \code{3}).}
 
-\item{shift_down}{The number of units to shift the region downward.
-Default is 3.}
-
-\item{gene_col}{The column name that contains gene information for
+\item{gene_col}{Optional character scalar giving the name of a 1D
+dataset under \code{"var/"} (e.g. \code{"SYMBOL"}). The value at
+the end marker will be shown in the x-axis label as gene
 annotation.}
 
-\item{regul_col}{The column name that contains regulatory information for
-annotation.}
+\item{regul_col}{Optional character scalar giving the name of a 1D
+dataset under \code{"var/"} (e.g. a regulatory category). The value
+at the end marker will also be shown in the axis label.}
 }
 \value{
-A \code{ggplot2} object representing the DMR plot.
+A \code{ggplot} object showing the per-group methylation
+profiles over the requested region.
 }
 \description{
-This function plots the differentially methylated regions (DMRs) based
-on the specified methylation data, DMRs, and gene annotations. The plot
-will show the regions of interest with optional shifting, coloring by gene
-and regulatory information.
+Visualise differentially methylated regions (DMRs) over a genomic
+interval using per-group mean methylation profiles stored in
+\code{pre_calldmrs_res}. For each group (e.g. case/ctrl) the function
+draws small “triangles” at CpG positions, where the height encodes the
+mean methylation proportion in \eqn{[0, 1]}.
 }
 \details{
-This function reads in methylation data, DMR information, and gene
-annotations to generate a plot. It allows the shifting of the region
-of interest up and down for improved visualization and can optionally
-display gene and regulatory information.
+\itemize{
+\item The \code{region} boundaries (\code{start}, \code{end}) are
+matched against \code{pre_calldmrs_res$pos} on the specified
+chromosome. If either boundary cannot be found an error is raised.
+
+\item The plotted y-axis corresponds to mean methylation
+\emph{proportions} in \eqn{[0, 1]} (consistent with storing
+methylation as 0–1 values in the package).
+
+\item Upstream/downstream context is controlled by \code{shift_up}
+and \code{shift_down} in terms of CpG \emph{indices} rather than
+base pairs.
+}
+
+Internally this function calls two helpers:
+\itemize{
+\item \code{plot_dmr_mt()} – builds the triangle polygons per CpG
+and group;
+\item \code{plot_dmrs_g()} – draws the \pkg{ggplot2} figure.
+}
 }
 \examples{
-# example code
+\donttest{
+## minimal workflow example (0–1 methylation values)
 output_dir <- tempdir()
 
+## sample metadata
 sam_info_df <- data.frame(
-  sample_name = c(
-    'sample_1.bed', 'sample_2.bed',
-    'sample_3.bed', 'sample_4.bed',
-    'sample_5.bed', 'sample_6.bed',
-    'sample_7.bed', 'sample_8.bed'
-  ),
-  group = c(rep('case', 4), rep('ctrl', 4))
+  sample_name = paste0("sample_", 1:8, ".bed"),
+  group       = c(rep("case", 4), rep("ctrl", 4)),
+  stringsAsFactors = FALSE
 )
-sam_info <- file.path(output_dir, 'sample_info.csv')
+sam_info <- file.path(output_dir, "sample_info.csv")
 
+## toy methylation matrix (0–1 scale)
 input_file_df <- data.frame(
-  marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
+  marker_name   = c(
+    "chr1_1000_2000",
+    "chr1_2000_3000",
+    "chr1_3000_4000",
+    "chr1_4000_5000"
   ),
-  sample_1.bed = c(100, 200, 600, 900),
-  sample_2.bed = c(100, 200, 600, 900),
-  sample_3.bed = c(100, 200, 600, 900),
-  sample_4.bed = c(100, 200, 600, 900),
-  sample_5.bed = c(800, 900, 100, 50),
-  sample_6.bed = c(800, 900, 100, 50),
-  sample_7.bed = c(800, 900, 100, 50),
-  sample_8.bed = c(800, 900, 100, 50)
+  sample_1.bed = c(0.10, 0.20, 0.60, 0.90),
+  sample_2.bed = c(0.10, 0.20, 0.60, 0.90),
+  sample_3.bed = c(0.10, 0.20, 0.60, 0.90),
+  sample_4.bed = c(0.10, 0.20, 0.60, 0.90),
+  sample_5.bed = c(0.80, 0.90, 0.10, 0.05),
+  sample_6.bed = c(0.80, 0.90, 0.10, 0.05),
+  sample_7.bed = c(0.80, 0.90, 0.10, 0.05),
+  sample_8.bed = c(0.80, 0.90, 0.10, 0.05),
+  check.names = FALSE
 )
-input_file <- file.path(output_dir, 'methylTracer_1kb.txt')
+input_file <- file.path(output_dir, "methylTracer_1kb.txt")
 
+## annotation (coordinates consistent with marker_name)
 annotation_file_df <- data.frame(
-  chr = rep('chr1', 4),
-  start = c(1000, 2000, 3000, 4000),
-  end = c(2000, 3000, 4000, 5000),
-  SYMBOL = c('gene1', 'gene2', 'gene3', 'gene4'),
+  chr        = rep("chr1", 4),
+  start      = c(1000, 2000, 3000, 4000),
+  end        = c(2000, 3000, 4000, 5000),
+  SYMBOL     = paste0("gene", 1:4),
   marker_name = c(
-    'chr1_1000_2000', 'chr1_2000_3000',
-    'chr1_3000_4000', 'chr1_4000_5000'
-  )
+    "chr1_1000_2000",
+    "chr1_2000_3000",
+    "chr1_3000_4000",
+    "chr1_4000_5000"
+  ),
+  stringsAsFactors = FALSE
 )
-annotation_file <- file.path(output_dir, 'annotation.bed')
+annotation_file <- file.path(output_dir, "annotation.bed")
 
-output_file <- 'methylTracer_obj_test.h5'
+output_file <- "methylTracer_obj_test.h5"
 
-unlink(file.path(output_dir, output_file),
-  recursive = TRUE
-)
-
-write.csv(sam_info_df, sam_info,
-  row.names = FALSE
-)
-write.table(input_file_df, input_file,
-  sep = '\t', row.names = FALSE
-)
+## write input files
+unlink(file.path(output_dir, output_file), recursive = TRUE)
+write.csv(sam_info_df, sam_info, row.names = FALSE)
+write.table(input_file_df, input_file, sep = "\t", row.names = FALSE)
 write.table(annotation_file_df, annotation_file,
-  sep = '\t', row.names = FALSE
-)
+            sep = "\t", row.names = FALSE)
 
+## build HDF5 and methylTracer object
 build_h5(
-  sam_info = sam_info,
-  input_file = input_file,
-  output_dir = output_dir,
-  output_file = output_file,
+  sam_info       = sam_info,
+  input_file     = input_file,
+  output_dir     = output_dir,
+  output_file    = output_file,
   annotation_file = annotation_file
 )
 
-met_obj <- build_met_obj(
-  file.path(output_dir, output_file),
-  sample_name = 'sample_name',
-  marker_name = 'marker_name'
+met <- build_met_obj(
+  h5_file     = file.path(output_dir, output_file),
+  sample_name = "sample_name",
+  marker_name = "marker_name"
 )
 
+## pre-compute stats and call DMRs
 pre_res <- pre_calldmrs(
-  met_obj = met_obj,
-  group_colname = 'group',
-  case_group = 'case',
-  control_group = 'ctrl'
+  met           = met,
+  group_colname = "group",
+  case_group    = "case",
+  control_group = "ctrl"
 )
+
 dmr_res <- calldmrs_turbo(
-  met_obj = met_obj,
+  met         = met,
   p_threshold = 0.9,
-  case_group = "case",
-  ctrl_group = "ctrl"
+  case_group  = "case",
+  ctrl_group  = "ctrl"
 )
-plot_dmrs(
-  met_obj = met_obj,
+
+## pick a region overlapping one of the markers
+p <- plot_dmrs(
+  met              = met,
   pre_calldmrs_res = pre_res,
-  dmrs_gr = dmr_res,
-  region = "chr1:1000-4000",
-  shift_up = 1,
-  shift_down = 1,
-  gene_col = "SYMBOL"
+  region           = "chr1:2000-5000",
+  shift_up         = 1,
+  shift_down       = 1,
+  gene_col         = "SYMBOL"
 )
+print(p)
+}
 }

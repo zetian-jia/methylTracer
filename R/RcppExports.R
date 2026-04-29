@@ -5,8 +5,8 @@ calldmrs_turbo <- function(DMLresult, p_threshold = 1e-5, minlen = 50L, minCG = 
     .Call(`_methylTracer_calldmrs_turbo`, DMLresult, p_threshold, minlen, minCG, dis_merge, pct_sig, sep)
 }
 
-computeStatCpp <- function(mean_1, mean_2, var1, var2) {
-    .Call(`_methylTracer_computeStatCpp`, mean_1, mean_2, var1, var2)
+computeStatCpp <- function(mean_1, mean_2, var1, var2, nn_1, nn_2) {
+    .Call(`_methylTracer_computeStatCpp`, mean_1, mean_2, var1, var2, nn_1, nn_2)
 }
 
 fill_missing_with_mean <- function(chunk, chunk_mean) {
